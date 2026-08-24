@@ -18,7 +18,6 @@ Turso instead, no local file involved.
 import os
 import sqlite3
 
-import libsql
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +33,19 @@ ON_RENDER = os.environ.get("RENDER") == "true"
 def connect():
     """Open a DB connection: direct remote Turso connection on Render,
     embedded replica against Turso elsewhere, plain local sqlite3 file if
-    Turso isn't configured at all."""
+    Turso isn't configured at all.
+
+    libsql is imported lazily, here, rather than at module load time: it
+    spins up a Rust tokio runtime on first real use, and gunicorn's master
+    process imports app.py once (for validation) before fork()ing workers —
+    if that import touched libsql, every worker forked afterward would
+    inherit a broken copy of that runtime's threads and hang forever on
+    their first query. Deferring the import means it only happens inside
+    an already-forked worker (or the post_fork hook in gunicorn.conf.py),
+    never in the pre-fork master.
+    """
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+        import libsql
         if ON_RENDER:
             return libsql.connect(database=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
         return libsql.connect(

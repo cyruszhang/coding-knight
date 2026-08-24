@@ -309,8 +309,7 @@ def update_settings():
     return get_settings()
 
 
-init_db()
-
 if __name__ == "__main__":
+    init_db()
     # 0.0.0.0 so other devices on the same wifi (like an iPad) can reach it via this machine's LAN IP.
     app.run(host="0.0.0.0", port=5000, debug=False)
