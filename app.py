@@ -67,7 +67,6 @@ def get_db():
     db = getattr(g, "_db", None)
     if db is None:
         db = g._db = dbmod.connect()
-        db.execute("PRAGMA foreign_keys = ON")
     return db
 
 
@@ -163,16 +162,8 @@ def index():
 
 @app.route("/api/tasks", methods=["GET"])
 def list_tasks():
-    import sys, time
-    t0 = time.time()
     db = get_db()
-    print(f"[diag] get_db() returned after {time.time()-t0:.2f}s", flush=True, file=sys.stderr)
-    t1 = time.time()
-    cur = db.execute("SELECT * FROM tasks")
-    print(f"[diag] execute() returned after {time.time()-t1:.2f}s", flush=True, file=sys.stderr)
-    t2 = time.time()
-    rows = dbmod.fetchall(cur)
-    print(f"[diag] fetchall() returned after {time.time()-t2:.2f}s", flush=True, file=sys.stderr)
+    rows = dbmod.fetchall(db.execute("SELECT * FROM tasks"))
     return jsonify([row_to_task(r) for r in rows])
 
 

@@ -35,14 +35,9 @@ def connect():
     """Open a DB connection: direct remote Turso connection on Render,
     embedded replica against Turso elsewhere, plain local sqlite3 file if
     Turso isn't configured at all."""
-    import sys, time
-    print(f"[diag] connect() start, ON_RENDER={ON_RENDER}, has_url={bool(TURSO_DATABASE_URL)}, has_token={bool(TURSO_AUTH_TOKEN)}", flush=True, file=sys.stderr)
-    t0 = time.time()
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         if ON_RENDER:
-            c = libsql.connect(database=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
-            print(f"[diag] remote connect() returned after {time.time()-t0:.2f}s", flush=True, file=sys.stderr)
-            return c
+            return libsql.connect(database=TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
         return libsql.connect(
             DB_PATH,
             sync_url=TURSO_DATABASE_URL,
