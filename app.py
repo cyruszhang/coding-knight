@@ -6,16 +6,13 @@ Run with:  python app.py
 Then visit http://<this-machine's-LAN-IP>:5000 from any device on the same network.
 """
 
-import os
-import sqlite3
 import time
 import uuid
 from datetime import date
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "codequest.db")
+import db as dbmod
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -68,8 +65,7 @@ SEED_TASKS = [
 def get_db():
     db = getattr(g, "_db", None)
     if db is None:
-        db = g._db = sqlite3.connect(DB_PATH)
-        db.row_factory = sqlite3.Row
+        db = g._db = dbmod.connect()
         db.execute("PRAGMA foreign_keys = ON")
     return db
 
@@ -82,7 +78,7 @@ def close_db(_exc):
 
 
 def init_db():
-    db = sqlite3.connect(DB_PATH)
+    db = dbmod.connect()
     db.executescript(
         """
         CREATE TABLE IF NOT EXISTS tasks (
@@ -118,7 +114,7 @@ def init_db():
         """
     )
     # Seed tasks only if the table is empty (first run).
-    count = db.execute("SELECT COUNT(*) c FROM tasks").fetchone()[0]
+    count = dbmod.fetchone(db.execute("SELECT COUNT(*) c FROM tasks"))["c"]
     if count == 0:
         db.executemany(
             "INSERT INTO tasks (id, title, points, difficulty, brief) VALUES (?, ?, ?, ?, ?)",
@@ -127,26 +123,13 @@ def init_db():
     # Seed settings only if missing.
     for key, value in DEFAULT_SETTINGS.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
-    db.commit()
+    dbmod.commit_and_sync(db)
     db.close()
 
 
-def row_to_task(row):
-    return {"id": row["id"], "title": row["title"], "points": row["points"],
-            "difficulty": row["difficulty"], "brief": row["brief"]}
-
-
-def row_to_submission(row):
-    return {
-        "id": row["id"], "taskId": row["task_id"], "title": row["title"], "points": row["points"],
-        "explanation": row["explanation"], "code": row["code"], "status": row["status"],
-        "reviewNote": row["review_note"], "submittedAt": row["submitted_at"], "reviewedAt": row["reviewed_at"],
-    }
-
-
-def row_to_redemption(row):
-    return {"id": row["id"], "minutes": row["minutes"], "points": row["points"],
-            "date": row["date"], "redeemedAt": row["redeemed_at"]}
+row_to_task = dbmod.row_to_task
+row_to_submission = dbmod.row_to_submission
+row_to_redemption = dbmod.row_to_redemption
 
 
 # ---------------- Frontend ----------------
@@ -161,7 +144,7 @@ def index():
 @app.route("/api/tasks", methods=["GET"])
 def list_tasks():
     db = get_db()
-    rows = db.execute("SELECT * FROM tasks").fetchall()
+    rows = dbmod.fetchall(db.execute("SELECT * FROM tasks"))
     return jsonify([row_to_task(r) for r in rows])
 
 
@@ -177,8 +160,8 @@ def create_task():
         "INSERT INTO tasks (id, title, points, difficulty, brief) VALUES (?, ?, ?, ?, ?)",
         (task_id, data["title"], int(data["points"]), data["difficulty"], data["brief"]),
     )
-    db.commit()
-    row = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
     return jsonify(row_to_task(row)), 201
 
 
@@ -186,7 +169,7 @@ def create_task():
 def delete_task(task_id):
     db = get_db()
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
-    db.commit()
+    dbmod.commit_and_sync(db)
     return jsonify({"deleted": task_id})
 
 
@@ -195,7 +178,7 @@ def delete_task(task_id):
 @app.route("/api/submissions", methods=["GET"])
 def list_submissions():
     db = get_db()
-    rows = db.execute("SELECT * FROM submissions ORDER BY submitted_at ASC").fetchall()
+    rows = dbmod.fetchall(db.execute("SELECT * FROM submissions ORDER BY submitted_at ASC"))
     return jsonify([row_to_submission(r) for r in rows])
 
 
@@ -214,8 +197,8 @@ def create_submission():
         (sub_id, data["taskId"], data["title"], int(data["points"]),
          data.get("explanation", ""), data.get("code", ""), now),
     )
-    db.commit()
-    row = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)))
     return jsonify(row_to_submission(row)), 201
 
 
@@ -231,8 +214,8 @@ def review_submission(sub_id):
         "UPDATE submissions SET status=?, review_note=?, reviewed_at=? WHERE id=?",
         (status, data.get("reviewNote", ""), now, sub_id),
     )
-    db.commit()
-    row = db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)).fetchone()
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)))
     if row is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(row_to_submission(row))
@@ -243,7 +226,7 @@ def review_submission(sub_id):
 @app.route("/api/redemptions", methods=["GET"])
 def list_redemptions():
     db = get_db()
-    rows = db.execute("SELECT * FROM redemptions ORDER BY redeemed_at ASC").fetchall()
+    rows = dbmod.fetchall(db.execute("SELECT * FROM redemptions ORDER BY redeemed_at ASC"))
     return jsonify([row_to_redemption(r) for r in rows])
 
 
@@ -261,8 +244,8 @@ def create_redemption():
         "INSERT INTO redemptions (id, minutes, points, date, redeemed_at) VALUES (?, ?, ?, ?, ?)",
         (red_id, int(data["minutes"]), int(data["points"]), today, now_iso),
     )
-    db.commit()
-    row = db.execute("SELECT * FROM redemptions WHERE id=?", (red_id,)).fetchone()
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM redemptions WHERE id=?", (red_id,)))
     return jsonify(row_to_redemption(row)), 201
 
 
@@ -271,7 +254,7 @@ def create_redemption():
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
     db = get_db()
-    rows = db.execute("SELECT key, value FROM settings").fetchall()
+    rows = dbmod.fetchall(db.execute("SELECT key, value FROM settings"))
     out = {r["key"]: r["value"] for r in rows}
     return jsonify({
         "pointsPerMinute": float(out.get("pointsPerMinute", 1)),
@@ -290,7 +273,7 @@ def update_settings():
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, str(data[key])),
             )
-    db.commit()
+    dbmod.commit_and_sync(db)
     return get_settings()
 
 
