@@ -31,40 +31,43 @@ async function apiGet(path) {
   if (!res.ok) throw new Error("GET " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiPost(path, body) {
+function pinHeaders(pin) {
+  return pin ? { "X-Parent-Pin": pin } : {};
+}
+async function apiPost(path, body, pin) {
   const res = await fetch(API + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("POST " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiPatch(path, body) {
+async function apiPatch(path, body, pin) {
   const res = await fetch(API + path, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("PATCH " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiPut(path, body) {
+async function apiPut(path, body, pin) {
   const res = await fetch(API + path, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("PUT " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiDelete(path) {
-  const res = await fetch(API + path, { method: "DELETE" });
+async function apiDelete(path, pin) {
+  const res = await fetch(API + path, { method: "DELETE", headers: pinHeaders(pin) });
   if (!res.ok) throw new Error("DELETE " + path + " failed (" + res.status + ")");
   return res.json();
 }
 
-const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60, parentPin: "1234" };
+const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
 
 const DIFFICULTY = {
   easy: { label: "EASY", color: "#5EEAD4" },
@@ -102,6 +105,7 @@ function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
+  const [parentPin, setParentPin] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => { loadAll(); }, []);
@@ -144,7 +148,7 @@ function App() {
 
   async function reviewSubmission(subId, decision, note) {
     try {
-      const updated = await apiPatch("/submissions/" + subId, { status: decision, reviewNote: note || "" });
+      const updated = await apiPatch("/submissions/" + subId, { status: decision, reviewNote: note || "" }, parentPin);
       setSubmissions(submissions.map(s => s.id === subId ? updated : s));
     } catch (e) {
       setError("Review failed: " + e.message);
@@ -163,7 +167,7 @@ function App() {
 
   async function addTask(task) {
     try {
-      const created = await apiPost("/tasks", task);
+      const created = await apiPost("/tasks", task, parentPin);
       setTasks([...tasks, created]);
     } catch (e) {
       setError("Add task failed: " + e.message);
@@ -172,7 +176,7 @@ function App() {
 
   async function deleteTask(taskId) {
     try {
-      await apiDelete("/tasks/" + taskId);
+      await apiDelete("/tasks/" + taskId, parentPin);
       setTasks(tasks.filter(t => t.id !== taskId));
     } catch (e) {
       setError("Delete failed: " + e.message);
@@ -181,16 +185,29 @@ function App() {
 
   async function updateSettings(next) {
     try {
-      const updated = await apiPut("/settings", next);
+      const updated = await apiPut("/settings", next, parentPin);
       setSettings(updated);
+      if (next.parentPin) setParentPin(next.parentPin);
     } catch (e) {
       setError("Settings save failed: " + e.message);
     }
   }
 
-  function tryParentPin(pin) {
-    if (pin === settings.parentPin) { setRole("parent"); setPinInput(""); setPinError(false); }
-    else setPinError(true);
+  async function tryParentPin(pin) {
+    try {
+      const res = await fetch(API + "/auth/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      if (res.ok) {
+        setParentPin(pin); setRole("parent"); setPinInput(""); setPinError(false);
+      } else {
+        setPinError(true);
+      }
+    } catch (e) {
+      setPinError(true);
+    }
   }
 
   const gridBg = {
@@ -231,7 +248,7 @@ function App() {
       {role === "parent" && (
         <ParentView tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
-          onUpdateSettings={updateSettings} onBack={() => setRole(null)} />
+          onUpdateSettings={updateSettings} onBack={() => { setRole(null); setParentPin(null); }} />
       )}
     </div>
   );
@@ -627,6 +644,13 @@ function HistoryTab({ submissions, redemptions }) {
 
 function SettingsTab({ settings, onUpdateSettings }) {
   const [local, setLocal] = useState(settings);
+  const [newPin, setNewPin] = useState("");
+  function save() {
+    const payload = { ...local };
+    if (newPin.trim()) payload.parentPin = newPin.trim();
+    onUpdateSettings(payload);
+    setNewPin("");
+  }
   return (
     <Panel className="grid gap-4 max-w-sm">
       <div>
@@ -640,11 +664,11 @@ function SettingsTab({ settings, onUpdateSettings }) {
           className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
       </div>
       <div>
-        <label className="text-xs font-mono text-slate-400 block mb-1">Parent PIN</label>
-        <input value={local.parentPin} onChange={(e) => setLocal({ ...local, parentPin: e.target.value })}
+        <label className="text-xs font-mono text-slate-400 block mb-1">New parent PIN (leave blank to keep current)</label>
+        <input value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="••••"
           className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
       </div>
-      <button onClick={() => onUpdateSettings(local)} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded py-2 text-sm">
+      <button onClick={save} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded py-2 text-sm">
         Save settings
       </button>
     </Panel>

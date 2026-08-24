@@ -9,6 +9,7 @@ Then visit http://<this-machine's-LAN-IP>:5000 from any device on the same netwo
 import time
 import uuid
 from datetime import date
+from functools import wraps
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
@@ -132,6 +133,25 @@ row_to_submission = dbmod.row_to_submission
 row_to_redemption = dbmod.row_to_redemption
 
 
+def current_parent_pin():
+    db = get_db()
+    row = dbmod.fetchone(db.execute("SELECT value FROM settings WHERE key='parentPin'"))
+    return row["value"] if row else DEFAULT_SETTINGS["parentPin"]
+
+
+def require_parent_pin(fn):
+    """Parent-only actions (task/submission/settings management) must present
+    the PIN server-side on every request — the PIN gate in the UI is just a
+    screen; without this, anyone who can reach the API at all could skip it."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        provided = request.headers.get("X-Parent-Pin", "")
+        if not provided or provided != current_parent_pin():
+            return jsonify({"error": "invalid parent pin"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 # ---------------- Frontend ----------------
 
 @app.route("/")
@@ -149,6 +169,7 @@ def list_tasks():
 
 
 @app.route("/api/tasks", methods=["POST"])
+@require_parent_pin
 def create_task():
     data = request.get_json(force=True)
     for field in ("title", "brief", "points", "difficulty"):
@@ -166,6 +187,7 @@ def create_task():
 
 
 @app.route("/api/tasks/<task_id>", methods=["DELETE"])
+@require_parent_pin
 def delete_task(task_id):
     db = get_db()
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
@@ -203,6 +225,7 @@ def create_submission():
 
 
 @app.route("/api/submissions/<sub_id>", methods=["PATCH"])
+@require_parent_pin
 def review_submission(sub_id):
     data = request.get_json(force=True)
     status = data.get("status")
@@ -249,6 +272,16 @@ def create_redemption():
     return jsonify(row_to_redemption(row)), 201
 
 
+# ---------------- Auth ----------------
+
+@app.route("/api/auth/verify-pin", methods=["POST"])
+def verify_pin():
+    data = request.get_json(force=True)
+    if data.get("pin", "") == current_parent_pin():
+        return jsonify({"ok": True})
+    return jsonify({"ok": False}), 401
+
+
 # ---------------- Settings ----------------
 
 @app.route("/api/settings", methods=["GET"])
@@ -259,11 +292,11 @@ def get_settings():
     return jsonify({
         "pointsPerMinute": float(out.get("pointsPerMinute", 1)),
         "dailyCapMinutes": int(out.get("dailyCapMinutes", 60)),
-        "parentPin": out.get("parentPin", "1234"),
     })
 
 
 @app.route("/api/settings", methods=["PUT"])
+@require_parent_pin
 def update_settings():
     data = request.get_json(force=True)
     db = get_db()
