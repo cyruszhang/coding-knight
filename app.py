@@ -62,6 +62,34 @@ SEED_TASKS = [
      "Pick something you want the turtle to draw or do. Break it into steps yourself before writing any code."),
 ]
 
+KIDS = [
+    ("shayne", "Shayne"),
+    ("kelly", "Kelly"),
+]
+
+SEED_TASKS_KELLY = [
+    ("k-e1", "Draw a Square", 10, "easy",
+     "Draw a square using forward and right — four sides, turning the same amount each time."),
+    ("k-e2", "Draw a Rectangle", 10, "easy",
+     "Like the square, but two of the sides are longer than the other two."),
+    ("k-e3", "Draw a Triangle", 10, "easy",
+     "Draw a triangle using forward and right three times. Turn 120 degrees each time."),
+    ("k-e4", "Draw Your Initial", 10, "easy",
+     "Pick the first letter of your name and draw it using forward, right, left, penup, and pendown."),
+    ("k-e5", "Color Change Line", 10, "easy",
+     "Draw a few lines side by side, each a different color, using t.color()."),
+    ("k-e6", "Draw a Circle", 10, "easy",
+     "Use t.circle() to draw a circle. Try a few different sizes."),
+    ("k-e7", "Simple Smiley", 10, "easy",
+     "Draw a face — one big circle for the head, two small circles for eyes."),
+    ("k-e8", "Star Points", 10, "easy",
+     "Draw a five-pointed star without lifting the pen. Turn the turtle 144 degrees each time."),
+    ("k-m1", "Rainbow Loop", 20, "medium",
+     "Use a loop to draw several lines, each a different color, instead of writing the same code over and over."),
+    ("k-m2", "Nested Shapes", 20, "medium",
+     "Draw two squares, one bigger than the other, so one sits inside the other."),
+]
+
 
 def get_db():
     db = getattr(g, "_db", None)
@@ -77,10 +105,20 @@ def close_db(_exc):
         db.close()
 
 
+def _ensure_column(db, table, column, coldef):
+    cols = [r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+
+
 def init_db():
     db = dbmod.connect()
     db.executescript(
         """
+        CREATE TABLE IF NOT EXISTS kids (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
@@ -113,13 +151,25 @@ def init_db():
         );
         """
     )
-    # Seed tasks only if the table is empty (first run).
-    count = dbmod.fetchone(db.execute("SELECT COUNT(*) c FROM tasks"))["c"]
-    if count == 0:
-        db.executemany(
-            "INSERT INTO tasks (id, title, points, difficulty, brief) VALUES (?, ?, ?, ?, ?)",
-            [(tid, title, points, diff, brief) for tid, title, points, diff, brief in SEED_TASKS],
-        )
+    # kid_id was added after tasks/submissions/redemptions already existed in
+    # production — the ALTER TABLE's own DEFAULT backfills existing rows
+    # (all Shayne's, pre-Kelly) in the same statement.
+    for table in ("tasks", "submissions", "redemptions"):
+        _ensure_column(db, table, "kid_id", "kid_id TEXT NOT NULL DEFAULT 'shayne'")
+
+    for kid_id, name in KIDS:
+        db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
+
+    # Seed each kid's tasks only if that kid has none yet (first run per kid).
+    for kid_id, seed in (("shayne", SEED_TASKS), ("kelly", SEED_TASKS_KELLY)):
+        count = dbmod.fetchone(
+            db.execute("SELECT COUNT(*) c FROM tasks WHERE kid_id=?", (kid_id,))
+        )["c"]
+        if count == 0:
+            db.executemany(
+                "INSERT INTO tasks (id, title, points, difficulty, brief, kid_id) VALUES (?, ?, ?, ?, ?, ?)",
+                [(tid, title, points, diff, brief, kid_id) for tid, title, points, diff, brief in seed],
+            )
     # Seed settings only if missing.
     for key, value in DEFAULT_SETTINGS.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
@@ -130,6 +180,7 @@ def init_db():
 row_to_task = dbmod.row_to_task
 row_to_submission = dbmod.row_to_submission
 row_to_redemption = dbmod.row_to_redemption
+row_to_kid = dbmod.row_to_kid
 
 
 def current_parent_pin():
@@ -158,12 +209,25 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+# ---------------- Kids ----------------
+
+@app.route("/api/kids", methods=["GET"])
+def list_kids():
+    db = get_db()
+    rows = dbmod.fetchall(db.execute("SELECT * FROM kids"))
+    return jsonify([row_to_kid(r) for r in rows])
+
+
 # ---------------- Tasks ----------------
 
 @app.route("/api/tasks", methods=["GET"])
 def list_tasks():
     db = get_db()
-    rows = dbmod.fetchall(db.execute("SELECT * FROM tasks"))
+    kid = request.args.get("kid")
+    if kid:
+        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks WHERE kid_id=?", (kid,)))
+    else:
+        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks"))
     return jsonify([row_to_task(r) for r in rows])
 
 
@@ -171,14 +235,14 @@ def list_tasks():
 @require_parent_pin
 def create_task():
     data = request.get_json(force=True)
-    for field in ("title", "brief", "points", "difficulty"):
+    for field in ("title", "brief", "points", "difficulty", "kidId"):
         if field not in data:
             return jsonify({"error": f"missing field: {field}"}), 400
     task_id = "t_" + uuid.uuid4().hex[:10]
     db = get_db()
     db.execute(
-        "INSERT INTO tasks (id, title, points, difficulty, brief) VALUES (?, ?, ?, ?, ?)",
-        (task_id, data["title"], int(data["points"]), data["difficulty"], data["brief"]),
+        "INSERT INTO tasks (id, title, points, difficulty, brief, kid_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (task_id, data["title"], int(data["points"]), data["difficulty"], data["brief"], data["kidId"]),
     )
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
@@ -199,24 +263,30 @@ def delete_task(task_id):
 @app.route("/api/submissions", methods=["GET"])
 def list_submissions():
     db = get_db()
-    rows = dbmod.fetchall(db.execute("SELECT * FROM submissions ORDER BY submitted_at ASC"))
+    kid = request.args.get("kid")
+    if kid:
+        rows = dbmod.fetchall(db.execute(
+            "SELECT * FROM submissions WHERE kid_id=? ORDER BY submitted_at ASC", (kid,)
+        ))
+    else:
+        rows = dbmod.fetchall(db.execute("SELECT * FROM submissions ORDER BY submitted_at ASC"))
     return jsonify([row_to_submission(r) for r in rows])
 
 
 @app.route("/api/submissions", methods=["POST"])
 def create_submission():
     data = request.get_json(force=True)
-    for field in ("taskId", "title", "points"):
+    for field in ("taskId", "title", "points", "kidId"):
         if field not in data:
             return jsonify({"error": f"missing field: {field}"}), 400
     sub_id = "sub_" + uuid.uuid4().hex[:10]
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     db = get_db()
     db.execute(
-        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)""",
+        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (sub_id, data["taskId"], data["title"], int(data["points"]),
-         data.get("explanation", ""), data.get("code", ""), now),
+         data.get("explanation", ""), data.get("code", ""), now, data["kidId"]),
     )
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)))
@@ -248,14 +318,20 @@ def review_submission(sub_id):
 @app.route("/api/redemptions", methods=["GET"])
 def list_redemptions():
     db = get_db()
-    rows = dbmod.fetchall(db.execute("SELECT * FROM redemptions ORDER BY redeemed_at ASC"))
+    kid = request.args.get("kid")
+    if kid:
+        rows = dbmod.fetchall(db.execute(
+            "SELECT * FROM redemptions WHERE kid_id=? ORDER BY redeemed_at ASC", (kid,)
+        ))
+    else:
+        rows = dbmod.fetchall(db.execute("SELECT * FROM redemptions ORDER BY redeemed_at ASC"))
     return jsonify([row_to_redemption(r) for r in rows])
 
 
 @app.route("/api/redemptions", methods=["POST"])
 def create_redemption():
     data = request.get_json(force=True)
-    for field in ("minutes", "points"):
+    for field in ("minutes", "points", "kidId"):
         if field not in data:
             return jsonify({"error": f"missing field: {field}"}), 400
     red_id = "red_" + uuid.uuid4().hex[:10]
@@ -263,8 +339,8 @@ def create_redemption():
     today = date.today().isoformat()
     db = get_db()
     db.execute(
-        "INSERT INTO redemptions (id, minutes, points, date, redeemed_at) VALUES (?, ?, ?, ?, ?)",
-        (red_id, int(data["minutes"]), int(data["points"]), today, now_iso),
+        "INSERT INTO redemptions (id, minutes, points, date, redeemed_at, kid_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (red_id, int(data["minutes"]), int(data["points"]), today, now_iso, data["kidId"]),
     )
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM redemptions WHERE id=?", (red_id,)))

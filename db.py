@@ -85,7 +85,7 @@ def fetchall(cursor):
 
 def row_to_task(row):
     return {"id": row["id"], "title": row["title"], "points": row["points"],
-            "difficulty": row["difficulty"], "brief": row["brief"]}
+            "difficulty": row["difficulty"], "brief": row["brief"], "kidId": row["kid_id"]}
 
 
 def row_to_submission(row):
@@ -93,9 +93,14 @@ def row_to_submission(row):
         "id": row["id"], "taskId": row["task_id"], "title": row["title"], "points": row["points"],
         "explanation": row["explanation"], "code": row["code"], "status": row["status"],
         "reviewNote": row["review_note"], "submittedAt": row["submitted_at"], "reviewedAt": row["reviewed_at"],
+        "kidId": row["kid_id"],
     }
 
 
 def row_to_redemption(row):
     return {"id": row["id"], "minutes": row["minutes"], "points": row["points"],
-            "date": row["date"], "redeemedAt": row["redeemed_at"]}
+            "date": row["date"], "redeemedAt": row["redeemed_at"], "kidId": row["kid_id"]}
+
+
+def row_to_kid(row):
+    return {"id": row["id"], "name": row["name"]}

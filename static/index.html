@@ -99,6 +99,8 @@ const IconAlert = (p) => <Icon {...p}>⚠</Icon>;
 function App() {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [kids, setKids] = useState([]);
+  const [selectedKid, setSelectedKid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [redemptions, setRedemptions] = useState([]);
@@ -114,10 +116,10 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const [t, s, r, cfg] = await Promise.all([
-        apiGet("/tasks"), apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
+      const [k, t, s, r, cfg] = await Promise.all([
+        apiGet("/kids"), apiGet("/tasks"), apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
       ]);
-      setTasks(t); setSubmissions(s); setRedemptions(r); setSettings(cfg);
+      setKids(k); setTasks(t); setSubmissions(s); setRedemptions(r); setSettings(cfg);
     } catch (e) {
       setError("Couldn't reach the server. Is app.py running? (" + e.message + ")");
     } finally {
@@ -125,21 +127,23 @@ function App() {
     }
   }
 
-  const approvedPoints = submissions.filter(s => s.status === "approved").reduce((sum, s) => sum + s.points, 0);
-  const redeemedPoints = redemptions.reduce((sum, r) => sum + r.points, 0);
-  const balance = approvedPoints - redeemedPoints;
-  const todaysRedeemedMinutes = redemptions.filter(r => r.date === todayStr()).reduce((sum, r) => sum + r.minutes, 0);
-
-  function taskStatus(taskId) {
-    const subs = submissions.filter(s => s.taskId === taskId);
+  function taskStatus(taskId, kidId) {
+    const subs = submissions.filter(s => s.taskId === taskId && s.kidId === kidId);
     if (subs.length === 0) return null;
     return subs[subs.length - 1];
+  }
+
+  function selectKid(kid) {
+    setSelectedKid(kid);
+    setRole("kid");
   }
 
   async function submitTask(taskId, explanation, code) {
     const task = tasks.find(t => t.id === taskId);
     try {
-      const created = await apiPost("/submissions", { taskId, title: task.title, points: task.points, explanation, code });
+      const created = await apiPost("/submissions", {
+        taskId, title: task.title, points: task.points, explanation, code, kidId: selectedKid.id,
+      });
       setSubmissions([...submissions, created]);
     } catch (e) {
       setError("Submit failed: " + e.message);
@@ -158,7 +162,7 @@ function App() {
   async function redeem(minutes) {
     const points = minutes * settings.pointsPerMinute;
     try {
-      const created = await apiPost("/redemptions", { minutes, points });
+      const created = await apiPost("/redemptions", { minutes, points, kidId: selectedKid.id });
       setRedemptions([...redemptions, created]);
     } catch (e) {
       setError("Redeem failed: " + e.message);
@@ -234,19 +238,19 @@ function App() {
           <button onClick={() => setError(null)} className="underline">dismiss</button>
         </div>
       )}
-      {!role && <RoleSelect onKid={() => setRole("kid")} onParentAttempt={() => setRole("parent-gate")} />}
+      {!role && <RoleSelect kids={kids} onSelectKid={selectKid} onParentAttempt={() => setRole("parent-gate")} />}
       {role === "parent-gate" && (
         <PinGate pinInput={pinInput} setPinInput={setPinInput} pinError={pinError}
           onSubmit={() => tryParentPin(pinInput)}
           onBack={() => { setRole(null); setPinInput(""); setPinError(false); }} />
       )}
-      {role === "kid" && (
-        <KidView tasks={tasks} submissions={submissions} balance={balance} settings={settings}
-          todaysRedeemedMinutes={todaysRedeemedMinutes} taskStatus={taskStatus}
-          onSubmit={submitTask} onRedeem={redeem} onBack={() => setRole(null)} />
+      {role === "kid" && selectedKid && (
+        <KidView kid={selectedKid} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
+          taskStatus={taskStatus}
+          onSubmit={submitTask} onRedeem={redeem} onBack={() => { setRole(null); setSelectedKid(null); }} />
       )}
       {role === "parent" && (
-        <ParentView tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
+        <ParentView kids={kids} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
           onUpdateSettings={updateSettings} onBack={() => { setRole(null); setParentPin(null); }} />
       )}
@@ -269,7 +273,7 @@ function Panel({ children, className = "" }) {
   );
 }
 
-function RoleSelect({ onKid, onParentAttempt }) {
+function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 gap-10">
       <div className="text-center">
@@ -278,14 +282,16 @@ function RoleSelect({ onKid, onParentAttempt }) {
         </div>
         <h1 className="text-3xl font-bold text-slate-100">Mission Control</h1>
       </div>
-      <div className="flex gap-5 w-full max-w-md flex-col sm:flex-row">
-        <button onClick={onKid} className="flex-1 group">
-          <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-teal-300/60 transition-colors">
-            <IconZap size={28} className="text-teal-300" />
-            <span className="font-mono text-sm tracking-wide text-slate-200">SHAYNE</span>
-            <span className="text-xs text-slate-400">View tasks &amp; points</span>
-          </Panel>
-        </button>
+      <div className="flex gap-5 w-full max-w-lg flex-col sm:flex-row flex-wrap justify-center">
+        {kids.map(kid => (
+          <button key={kid.id} onClick={() => onSelectKid(kid)} className="flex-1 group">
+            <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-teal-300/60 transition-colors">
+              <IconZap size={28} className="text-teal-300" />
+              <span className="font-mono text-sm tracking-wide text-slate-200">{kid.name.toUpperCase()}</span>
+              <span className="text-xs text-slate-400">View tasks &amp; points</span>
+            </Panel>
+          </button>
+        ))}
         <button onClick={onParentAttempt} className="flex-1 group">
           <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-amber-400/60 transition-colors">
             <IconLock size={28} className="text-amber-400" />
@@ -339,26 +345,35 @@ function GaugeBar({ balance, minutesAvailable }) {
   );
 }
 
-function KidView({ tasks, submissions, balance, settings, todaysRedeemedMinutes, taskStatus, onSubmit, onRedeem, onBack }) {
+function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, onSubmit, onRedeem, onBack }) {
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
   const [code, setCode] = useState("");
   const [redeemMinutes, setRedeemMinutes] = useState(15);
 
+  const kidTasks = tasks.filter(t => t.kidId === kid.id);
+  const kidSubmissions = submissions.filter(s => s.kidId === kid.id);
+  const kidRedemptions = redemptions.filter(r => r.kidId === kid.id);
+
+  const approvedPoints = kidSubmissions.filter(s => s.status === "approved").reduce((sum, s) => sum + s.points, 0);
+  const redeemedPoints = kidRedemptions.reduce((sum, r) => sum + r.points, 0);
+  const balance = approvedPoints - redeemedPoints;
+  const todaysRedeemedMinutes = kidRedemptions.filter(r => r.date === todayStr()).reduce((sum, r) => sum + r.minutes, 0);
+
   const minutesAvailable = Math.floor(balance / settings.pointsPerMinute);
   const capRemaining = Math.max(0, settings.dailyCapMinutes - todaysRedeemedMinutes);
   const maxRedeemable = Math.min(minutesAvailable, capRemaining);
 
-  const available = tasks.filter(t => {
-    const s = taskStatus(t.id);
+  const available = kidTasks.filter(t => {
+    const s = taskStatus(t.id, kid.id);
     return !s || s.status === "rejected";
   });
-  const pending = submissions.filter(s => s.status === "pending");
-  const approved = submissions.filter(s => s.status === "approved");
+  const pending = kidSubmissions.filter(s => s.status === "pending");
+  const approved = kidSubmissions.filter(s => s.status === "approved");
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <TopBar onBack={onBack} label="SHAYNE" />
+      <TopBar onBack={onBack} label={kid.name.toUpperCase()} />
       <div className="mb-4 text-xs font-mono text-slate-500 flex items-center gap-2">
         <IconTerminal size={13} /> Write your code in Mu Editor on the computer — then come back here to submit.
       </div>
@@ -496,7 +511,12 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   );
 }
 
-function ParentView({ tasks, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onUpdateSettings, onBack }) {
+function kidName(kids, kidId) {
+  const k = kids.find(k => k.id === kidId);
+  return k ? k.name : kidId;
+}
+
+function ParentView({ kids, tasks, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onUpdateSettings, onBack }) {
   const [tab, setTab] = useState("review");
   const pending = submissions.filter(s => s.status === "pending");
   return (
@@ -510,15 +530,15 @@ function ParentView({ tasks, submissions, redemptions, settings, onReview, onAdd
           </button>
         ))}
       </div>
-      {tab === "review" && <ReviewTab pending={pending} onReview={onReview} />}
-      {tab === "tasks" && <TasksTab tasks={tasks} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
-      {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} />}
+      {tab === "review" && <ReviewTab pending={pending} kids={kids} onReview={onReview} />}
+      {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
+      {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
       {tab === "settings" && <SettingsTab settings={settings} onUpdateSettings={onUpdateSettings} />}
     </div>
   );
 }
 
-function ReviewTab({ pending, onReview }) {
+function ReviewTab({ pending, kids, onReview }) {
   const [notes, setNotes] = useState({});
   if (pending.length === 0) return <div className="text-slate-500 text-sm italic">Nothing waiting for review.</div>;
   return (
@@ -526,7 +546,7 @@ function ReviewTab({ pending, onReview }) {
       {pending.map(s => (
         <Panel key={s.id}>
           <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-slate-100">{s.title}</span>
+            <span className="font-semibold text-slate-100">{s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
             <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
           </div>
           <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
@@ -552,13 +572,13 @@ function ReviewTab({ pending, onReview }) {
   );
 }
 
-function TasksTab({ tasks, onAddTask, onDeleteTask }) {
+function TasksTab({ tasks, kids, onAddTask, onDeleteTask }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", brief: "", points: 20, difficulty: "medium" });
+  const [form, setForm] = useState({ title: "", brief: "", points: 20, difficulty: "medium", kidId: kids[0]?.id || "" });
   function submit() {
-    if (!form.title.trim() || !form.brief.trim()) return;
+    if (!form.title.trim() || !form.brief.trim() || !form.kidId) return;
     onAddTask({ ...form, points: Number(form.points) });
-    setForm({ title: "", brief: "", points: 20, difficulty: "medium" });
+    setForm({ title: "", brief: "", points: 20, difficulty: "medium", kidId: kids[0]?.id || "" });
     setShowForm(false);
   }
   return (
@@ -570,6 +590,10 @@ function TasksTab({ tasks, onAddTask, onDeleteTask }) {
       {showForm && (
         <Panel className="mb-4">
           <div className="grid gap-2">
+            <select value={form.kidId} onChange={(e) => setForm({ ...form, kidId: e.target.value })}
+              className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm outline-none focus:border-teal-300">
+              {kids.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+            </select>
             <input placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
               className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm outline-none focus:border-teal-300" />
             <textarea placeholder="Brief description" value={form.brief} onChange={(e) => setForm({ ...form, brief: e.target.value })} rows={2}
@@ -595,7 +619,7 @@ function TasksTab({ tasks, onAddTask, onDeleteTask }) {
             <div key={t.id} className="flex items-center justify-between border border-slate-700/50 rounded px-3 py-2">
               <div>
                 <div className="text-sm text-slate-200">{t.title}</div>
-                <div className="text-xs font-mono" style={{ color: d.color }}>{d.label} · {t.points}pt</div>
+                <div className="text-xs font-mono" style={{ color: d.color }}>{d.label} · {t.points}pt · {kidName(kids, t.kidId)}</div>
               </div>
               <button onClick={() => onDeleteTask(t.id)} className="text-slate-500 hover:text-red-400"><IconTrash size={15} /></button>
             </div>
@@ -606,7 +630,7 @@ function TasksTab({ tasks, onAddTask, onDeleteTask }) {
   );
 }
 
-function HistoryTab({ submissions, redemptions }) {
+function HistoryTab({ submissions, redemptions, kids }) {
   const reviewed = submissions.filter(s => s.status !== "pending")
     .sort((a, b) => new Date(b.reviewedAt || b.submittedAt) - new Date(a.reviewedAt || a.submittedAt));
   return (
@@ -618,7 +642,7 @@ function HistoryTab({ submissions, redemptions }) {
             <div key={s.id} className="flex items-center justify-between border border-slate-700/50 rounded px-3 py-2 text-sm">
               <span className="flex items-center gap-2">
                 {s.status === "approved" ? <IconCheck size={14} className="text-teal-300" /> : <IconX size={14} className="text-red-400" />}
-                {s.title}
+                {s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span>
               </span>
               <span className="font-mono text-xs text-slate-400">{s.status === "approved" ? ("+" + s.points) : "sent back"}</span>
             </div>
@@ -631,7 +655,7 @@ function HistoryTab({ submissions, redemptions }) {
         <div className="grid gap-2">
           {redemptions.slice().reverse().map(r => (
             <div key={r.id} className="flex items-center justify-between border border-slate-700/50 rounded px-3 py-2 text-sm">
-              <span className="flex items-center gap-2 text-slate-300"><IconAward size={14} className="text-amber-400" /> {r.date}</span>
+              <span className="flex items-center gap-2 text-slate-300"><IconAward size={14} className="text-amber-400" /> {r.date} <span className="font-mono text-xs text-slate-500">({kidName(kids, r.kidId)})</span></span>
               <span className="font-mono text-xs text-amber-400">{r.minutes}m (−{r.points}pt)</span>
             </div>
           ))}
