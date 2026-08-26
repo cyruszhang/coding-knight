@@ -153,6 +153,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [kids, setKids] = useState([]);
   const [selectedKid, setSelectedKid] = useState(null);
+  const [pendingKid, setPendingKid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -188,8 +189,35 @@ function App() {
   }
 
   function selectKid(kid) {
-    setSelectedKid(kid);
-    setRole("kid");
+    setPendingKid(kid);
+    setRole("kid-gate");
+    setPinInput("");
+    setPinError(false);
+  }
+
+  async function tryKidPin(pin) {
+    try {
+      const res = await fetch(API + "/auth/verify-kid-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kidId: pendingKid.id, pin }),
+      });
+      if (res.ok) {
+        setSelectedKid(pendingKid); setPendingKid(null); setRole("kid"); setPinInput(""); setPinError(false);
+      } else {
+        setPinError(true);
+      }
+    } catch (e) {
+      setPinError(true);
+    }
+  }
+
+  async function updateKidPin(kidId, pin) {
+    try {
+      await apiPut("/kids/" + kidId, { pin }, parentPin);
+    } catch (e) {
+      setError("Update PIN failed: " + e.message);
+    }
   }
 
   async function submitTask(taskId, explanation, code, snapshot) {
@@ -310,6 +338,12 @@ function App() {
           onSubmit={() => tryParentPin(pinInput)}
           onBack={() => { setRole(null); setPinInput(""); setPinError(false); }} />
       )}
+      {role === "kid-gate" && pendingKid && (
+        <PinGate pinInput={pinInput} setPinInput={setPinInput} pinError={pinError}
+          label={pendingKid.name.toUpperCase() + " ACCESS"}
+          onSubmit={() => tryKidPin(pinInput)}
+          onBack={() => { setRole(null); setPendingKid(null); setPinInput(""); setPinError(false); }} />
+      )}
       {role === "kid" && selectedKid && (
         <KidView kid={selectedKid} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
           taskStatus={taskStatus}
@@ -319,7 +353,7 @@ function App() {
         <ParentView kids={kids} tasks={tasks} suggestions={suggestions} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
           onApproveSuggestion={approveSuggestion} onRejectSuggestion={rejectSuggestion}
-          onUpdateSettings={updateSettings} onBack={() => { setRole(null); setParentPin(null); }} />
+          onUpdateSettings={updateSettings} onUpdateKidPin={updateKidPin} onBack={() => { setRole(null); setParentPin(null); }} />
       )}
     </div>
   );
@@ -371,12 +405,12 @@ function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
   );
 }
 
-function PinGate({ pinInput, setPinInput, pinError, onSubmit, onBack }) {
+function PinGate({ pinInput, setPinInput, pinError, onSubmit, onBack, label = "PARENT ACCESS" }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <Panel className="w-full max-w-xs flex flex-col gap-4">
         <div className="font-mono text-xs tracking-widest text-amber-400 flex items-center gap-2">
-          <IconLock size={13} /> PARENT ACCESS
+          <IconLock size={13} /> {label}
         </div>
         <input type="password" inputMode="numeric" value={pinInput} onChange={(e) => setPinInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && onSubmit()} placeholder="Enter PIN" autoFocus
@@ -660,7 +694,7 @@ function kidName(kids, kidId) {
   return k ? k.name : kidId;
 }
 
-function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onBack }) {
+function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onUpdateKidPin, onBack }) {
   const [tab, setTab] = useState("review");
   const pending = submissions.filter(s => s.status === "pending");
   const tabCount = { review: pending.length, suggestions: suggestions.length };
@@ -679,7 +713,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
       {tab === "suggestions" && <SuggestionsTab suggestions={suggestions} kids={kids} onApprove={onApproveSuggestion} onReject={onRejectSuggestion} />}
       {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
       {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
-      {tab === "settings" && <SettingsTab settings={settings} onUpdateSettings={onUpdateSettings} />}
+      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKidPin={onUpdateKidPin} />}
     </div>
   );
 }
@@ -902,14 +936,19 @@ function HistoryTab({ submissions, redemptions, kids }) {
   );
 }
 
-function SettingsTab({ settings, onUpdateSettings }) {
+function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKidPin }) {
   const [local, setLocal] = useState(settings);
   const [newPin, setNewPin] = useState("");
+  const [kidPins, setKidPins] = useState({});
   function save() {
     const payload = { ...local };
     if (newPin.trim()) payload.parentPin = newPin.trim();
     onUpdateSettings(payload);
     setNewPin("");
+    Object.entries(kidPins).forEach(([kidId, pin]) => {
+      if (pin.trim()) onUpdateKidPin(kidId, pin.trim());
+    });
+    setKidPins({});
   }
   return (
     <Panel className="grid gap-4 max-w-sm">
@@ -928,6 +967,13 @@ function SettingsTab({ settings, onUpdateSettings }) {
         <input value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="••••"
           className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
       </div>
+      {kids.map(kid => (
+        <div key={kid.id}>
+          <label className="text-xs font-mono text-slate-400 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
+          <input value={kidPins[kid.id] || ""} onChange={(e) => setKidPins({ ...kidPins, [kid.id]: e.target.value })} placeholder="••••"
+            className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
+        </div>
+      ))}
       <button onClick={save} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded py-2 text-sm">
         Save settings
       </button>

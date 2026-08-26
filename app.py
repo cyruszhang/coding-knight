@@ -194,6 +194,9 @@ def init_db():
     # A rendered snapshot of the kid's turtle-canvas output at submit time —
     # genuinely optional (no default makes sense), nullable.
     _ensure_column(db, "submissions", "snapshot", "snapshot TEXT")
+    # Per-kid PIN gating the kid's own view, distinct from the parent PIN —
+    # both existing kids get a shared default, changeable per-kid afterward.
+    _ensure_column(db, "kids", "pin", "pin TEXT NOT NULL DEFAULT '0000'")
 
     for kid_id, name in KIDS:
         db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
@@ -266,6 +269,21 @@ def list_kids():
     db = get_db()
     rows = dbmod.fetchall(db.execute("SELECT * FROM kids"))
     return jsonify([row_to_kid(r) for r in rows])
+
+
+@app.route("/api/kids/<kid_id>", methods=["PUT"])
+@require_parent_pin
+def update_kid(kid_id):
+    data = request.get_json(force=True)
+    if "pin" not in data:
+        return jsonify({"error": "missing field: pin"}), 400
+    db = get_db()
+    db.execute("UPDATE kids SET pin=? WHERE id=?", (str(data["pin"]), kid_id))
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM kids WHERE id=?", (kid_id,)))
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(row_to_kid(row))
 
 
 # ---------------- Tasks ----------------
@@ -431,6 +449,16 @@ def create_redemption():
 def verify_pin():
     data = request.get_json(force=True)
     if data.get("pin", "") == current_parent_pin():
+        return jsonify({"ok": True})
+    return jsonify({"ok": False}), 401
+
+
+@app.route("/api/auth/verify-kid-pin", methods=["POST"])
+def verify_kid_pin():
+    data = request.get_json(force=True)
+    db = get_db()
+    row = dbmod.fetchone(db.execute("SELECT pin FROM kids WHERE id=?", (data.get("kidId"),)))
+    if row and data.get("pin", "") == row["pin"]:
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 401
 
