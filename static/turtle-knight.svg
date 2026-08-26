@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- back legs -->
+  <ellipse cx="62" cy="172" rx="14" ry="10" fill="#5EEAD4" stroke="#0D9488" stroke-width="2" transform="rotate(-20 62 172)"/>
+  <ellipse cx="138" cy="172" rx="14" ry="10" fill="#5EEAD4" stroke="#0D9488" stroke-width="2" transform="rotate(20 138 172)"/>
+  <!-- front legs -->
+  <ellipse cx="55" cy="140" rx="13" ry="10" fill="#5EEAD4" stroke="#0D9488" stroke-width="2" transform="rotate(-35 55 140)"/>
+  <ellipse cx="145" cy="140" rx="13" ry="10" fill="#5EEAD4" stroke="#0D9488" stroke-width="2" transform="rotate(35 145 140)"/>
+
+  <!-- shell -->
+  <ellipse cx="100" cy="128" rx="58" ry="48" fill="#14B8A6" stroke="#0D9488" stroke-width="3"/>
+  <!-- shell seams -->
+  <path d="M 100 84 L 100 172" fill="none" stroke="#0D9488" stroke-width="2.5" opacity="0.6"/>
+  <path d="M 100 100 L 60 118" fill="none" stroke="#0D9488" stroke-width="2.5" opacity="0.6"/>
+  <path d="M 100 100 L 140 118" fill="none" stroke="#0D9488" stroke-width="2.5" opacity="0.6"/>
+  <path d="M 100 150 L 62 138" fill="none" stroke="#0D9488" stroke-width="2.5" opacity="0.6"/>
+  <path d="M 100 150 L 138 138" fill="none" stroke="#0D9488" stroke-width="2.5" opacity="0.6"/>
+  <ellipse cx="100" cy="128" rx="58" ry="48" fill="none" stroke="#0D9488" stroke-width="3"/>
+
+  <!-- shield (overlapping shell edge) -->
+  <path d="M 142 106 L 164 112 L 162 138 Q 153 151 142 155 Q 131 151 122 138 L 120 112 Z"
+        fill="#F5A623" stroke="#B45309" stroke-width="2.5"/>
+  <path d="M 142 114 L 146 127 L 142 140 L 138 127 Z" fill="#0F2942"/>
+
+  <!-- head -->
+  <circle cx="100" cy="62" r="24" fill="#6EE7B7" stroke="#0D9488" stroke-width="3"/>
+  <!-- eyes -->
+  <circle cx="91" cy="58" r="4.5" fill="white"/>
+  <circle cx="109" cy="58" r="4.5" fill="white"/>
+  <circle cx="92" cy="59" r="2.2" fill="#0F2942"/>
+  <circle cx="110" cy="59" r="2.2" fill="#0F2942"/>
+  <!-- smile -->
+  <path d="M 90 70 Q 100 76 110 70" fill="none" stroke="#0D9488" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- knight helmet -->
+  <path d="M 76 52 Q 76 28 100 26 Q 124 28 124 52 L 124 56 Q 100 62 76 56 Z"
+        fill="#CBD5E1" stroke="#475569" stroke-width="2.5"/>
+  <!-- visor -->
+  <rect x="80" y="46" width="40" height="7" rx="2" fill="#0F2942"/>
+  <!-- helmet side wings -->
+  <path d="M 76 42 Q 66 44 66 54 Q 72 54 78 50 Z" fill="#CBD5E1" stroke="#475569" stroke-width="2"/>
+  <path d="M 124 42 Q 134 44 134 54 Q 128 54 122 50 Z" fill="#CBD5E1" stroke="#475569" stroke-width="2"/>
+  <!-- plume -->
+  <path d="M 100 26 Q 94 12 100 4 Q 106 12 100 26 Z" fill="#F5A623" stroke="#B45309" stroke-width="2"/>
+</svg>

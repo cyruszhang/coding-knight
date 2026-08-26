@@ -10,7 +10,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js"></script>
-<link rel="apple-touch-icon" href="data:image/png;base64,">
+<link rel="icon" type="image/svg+xml" href="/turtle-knight.svg">
+<link rel="apple-touch-icon" href="/turtle-knight.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
@@ -110,6 +111,32 @@ function runPython(code, targetId, onOutput) {
       return { ok: false, error: err.toString() };
     }
   );
+}
+
+// Downscales an uploaded photo to a small square-ish thumbnail before it
+// ever becomes a data URL — kid avatars are shown at a few dozen px on
+// the landing screen, and GET /api/kids loads before anyone's picked a
+// kid, so an un-resized multi-MB phone photo would bloat that first
+// fetch for no visual benefit.
+function readImageAsResizedDataUrl(file, maxSize = 200) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
@@ -212,11 +239,12 @@ function App() {
     }
   }
 
-  async function updateKidPin(kidId, pin) {
+  async function updateKid(kidId, fields) {
     try {
-      await apiPut("/kids/" + kidId, { pin }, parentPin);
+      const updated = await apiPut("/kids/" + kidId, fields, parentPin);
+      setKids(kids.map(k => k.id === kidId ? updated : k));
     } catch (e) {
-      setError("Update PIN failed: " + e.message);
+      setError("Update kid failed: " + e.message);
     }
   }
 
@@ -353,7 +381,7 @@ function App() {
         <ParentView kids={kids} tasks={tasks} suggestions={suggestions} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
           onApproveSuggestion={approveSuggestion} onRejectSuggestion={rejectSuggestion}
-          onUpdateSettings={updateSettings} onUpdateKidPin={updateKidPin} onBack={() => { setRole(null); setParentPin(null); }} />
+          onUpdateSettings={updateSettings} onUpdateKid={updateKid} onBack={() => { setRole(null); setParentPin(null); }} />
       )}
     </div>
   );
@@ -378,6 +406,7 @@ function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 gap-10">
       <div className="text-center">
+        <img src="/turtle-knight.svg" alt="Code Quest" className="w-20 h-20 mx-auto mb-3" />
         <div className="flex items-center justify-center gap-2 text-amber-400 font-mono text-xs tracking-[0.3em] mb-2">
           <IconTerminal /> CODE QUEST
         </div>
@@ -387,7 +416,11 @@ function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
         {kids.map(kid => (
           <button key={kid.id} onClick={() => onSelectKid(kid)} className="flex-1 group">
             <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-teal-300/60 transition-colors">
-              <IconZap size={28} className="text-teal-300" />
+              {kid.avatar ? (
+                <img src={kid.avatar} alt={kid.name} className="w-14 h-14 rounded-full object-cover border-2 border-teal-300/50" />
+              ) : (
+                <IconZap size={28} className="text-teal-300" />
+              )}
               <span className="font-mono text-sm tracking-wide text-slate-200">{kid.name.toUpperCase()}</span>
               <span className="text-xs text-slate-400">View tasks &amp; points</span>
             </Panel>
@@ -694,7 +727,7 @@ function kidName(kids, kidId) {
   return k ? k.name : kidId;
 }
 
-function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onUpdateKidPin, onBack }) {
+function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onUpdateKid, onBack }) {
   const [tab, setTab] = useState("review");
   const pending = submissions.filter(s => s.status === "pending");
   const tabCount = { review: pending.length, suggestions: suggestions.length };
@@ -713,7 +746,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
       {tab === "suggestions" && <SuggestionsTab suggestions={suggestions} kids={kids} onApprove={onApproveSuggestion} onReject={onRejectSuggestion} />}
       {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
       {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
-      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKidPin={onUpdateKidPin} />}
+      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKid={onUpdateKid} />}
     </div>
   );
 }
@@ -936,19 +969,31 @@ function HistoryTab({ submissions, redemptions, kids }) {
   );
 }
 
-function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKidPin }) {
+function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
   const [local, setLocal] = useState(settings);
   const [newPin, setNewPin] = useState("");
   const [kidPins, setKidPins] = useState({});
+  const [kidAvatars, setKidAvatars] = useState({});
+
+  async function pickAvatar(kidId, file) {
+    if (!file) return;
+    const dataUrl = await readImageAsResizedDataUrl(file);
+    setKidAvatars({ ...kidAvatars, [kidId]: dataUrl });
+  }
+
   function save() {
     const payload = { ...local };
     if (newPin.trim()) payload.parentPin = newPin.trim();
     onUpdateSettings(payload);
     setNewPin("");
-    Object.entries(kidPins).forEach(([kidId, pin]) => {
-      if (pin.trim()) onUpdateKidPin(kidId, pin.trim());
+    kids.forEach(kid => {
+      const fields = {};
+      if ((kidPins[kid.id] || "").trim()) fields.pin = kidPins[kid.id].trim();
+      if (kidAvatars[kid.id]) fields.avatar = kidAvatars[kid.id];
+      if (Object.keys(fields).length > 0) onUpdateKid(kid.id, fields);
     });
     setKidPins({});
+    setKidAvatars({});
   }
   return (
     <Panel className="grid gap-4 max-w-sm">
@@ -968,7 +1013,20 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKidPin }) {
           className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
       </div>
       {kids.map(kid => (
-        <div key={kid.id}>
+        <div key={kid.id} className="border-t border-slate-700/50 pt-4">
+          <div className="flex items-center gap-3 mb-2">
+            {(kidAvatars[kid.id] || kid.avatar) ? (
+              <img src={kidAvatars[kid.id] || kid.avatar} alt={kid.name} className="w-10 h-10 rounded-full object-cover border border-slate-600" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
+                <IconZap size={16} className="text-teal-300" />
+              </div>
+            )}
+            <span className="text-sm text-slate-300">{kid.name}</span>
+          </div>
+          <label className="text-xs font-mono text-slate-400 block mb-1">Photo</label>
+          <input type="file" accept="image/*" onChange={(e) => pickAvatar(kid.id, e.target.files[0])}
+            className="text-xs text-slate-400 mb-3 block w-full file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-700 file:text-slate-200 file:text-xs" />
           <label className="text-xs font-mono text-slate-400 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
           <input value={kidPins[kid.id] || ""} onChange={(e) => setKidPins({ ...kidPins, [kid.id]: e.target.value })} placeholder="••••"
             className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />

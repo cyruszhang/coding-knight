@@ -197,6 +197,9 @@ def init_db():
     # Per-kid PIN gating the kid's own view, distinct from the parent PIN —
     # both existing kids get a shared default, changeable per-kid afterward.
     _ensure_column(db, "kids", "pin", "pin TEXT NOT NULL DEFAULT '0000'")
+    # Avatar shown on the landing screen — unlike pin, not a secret, so
+    # GET /api/kids returns it (row_to_kid) while never returning pin.
+    _ensure_column(db, "kids", "avatar", "avatar TEXT")
 
     for kid_id, name in KIDS:
         db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
@@ -275,10 +278,13 @@ def list_kids():
 @require_parent_pin
 def update_kid(kid_id):
     data = request.get_json(force=True)
-    if "pin" not in data:
-        return jsonify({"error": "missing field: pin"}), 400
     db = get_db()
-    db.execute("UPDATE kids SET pin=? WHERE id=?", (str(data["pin"]), kid_id))
+    # Both columns are in a fixed whitelist below, never taken from the
+    # request itself, so interpolating the column name is safe here —
+    # only the value is a bind parameter.
+    for key in ("pin", "avatar"):
+        if key in data:
+            db.execute(f"UPDATE kids SET {key}=? WHERE id=?", (data[key], kid_id))
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM kids WHERE id=?", (kid_id,)))
     if row is None:
