@@ -574,10 +574,15 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
     setRunError(null);
     let out = "";
     setOutput("");
-    const result = await runPython(code, "turtle-target", (text) => { out += text; setOutput(out); });
-    if (!result.ok) setRunError(result.error);
-    setHasRun(true);
-    setRunning(false);
+    try {
+      const result = await runPython(code, "turtle-target", (text) => { out += text; setOutput(out); });
+      if (!result.ok) setRunError(result.error);
+    } catch (e) {
+      setRunError(e.message || String(e));
+    } finally {
+      setHasRun(true);
+      setRunning(false);
+    }
   }
 
   function handleSubmit() {
@@ -675,39 +680,86 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
 }
 
 function ReviewTab({ pending, kids, onReview }) {
-  const [notes, setNotes] = useState({});
   if (pending.length === 0) return <div className="text-slate-500 text-sm italic">Nothing waiting for review.</div>;
   return (
     <div className="grid gap-3">
-      {pending.map(s => (
-        <Panel key={s.id}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-slate-100">{s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
-            <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
-          </div>
-          <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
-          {s.snapshot && (
-            <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded border border-slate-700 mb-3" />
-          )}
-          {s.code && s.code.trim() && (
-            <pre className="text-xs font-mono text-teal-200 bg-slate-950/60 border border-slate-700 rounded p-3 mb-3 overflow-x-auto whitespace-pre-wrap">{s.code}</pre>
-          )}
-          <input placeholder="Optional note if sending back..." value={notes[s.id] || ""}
-            onChange={(e) => setNotes({ ...notes, [s.id]: e.target.value })}
-            className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-slate-400 mb-3" />
-          <div className="flex gap-2">
-            <button onClick={() => onReview(s.id, "rejected", notes[s.id])}
-              className="flex-1 border border-red-400/40 text-red-300 rounded py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-red-400/10">
-              <IconRedo size={13} /> Send back
-            </button>
-            <button onClick={() => onReview(s.id, "approved", "")}
-              className="flex-1 bg-teal-400 text-slate-900 font-semibold rounded py-1.5 text-sm flex items-center justify-center gap-1">
-              <IconCheck size={13} /> Approve
-            </button>
-          </div>
-        </Panel>
-      ))}
+      {pending.map(s => <ReviewCard key={s.id} s={s} kids={kids} onReview={onReview} />)}
     </div>
+  );
+}
+
+function ReviewCard({ s, kids, onReview }) {
+  const [note, setNote] = useState("");
+  const [running, setRunning] = useState(false);
+  const [hasRun, setHasRun] = useState(false);
+  const [output, setOutput] = useState("");
+  const [runError, setRunError] = useState(null);
+  const targetId = "review-target-" + s.id;
+
+  async function handleRun() {
+    setRunning(true);
+    setRunError(null);
+    setHasRun(true);
+    let out = "";
+    setOutput("");
+    try {
+      const result = await runPython(s.code || "", targetId, (text) => { out += text; setOutput(out); });
+      if (!result.ok) setRunError(result.error);
+    } catch (e) {
+      setRunError(e.message || String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-semibold text-slate-100">{s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
+        <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
+      </div>
+      <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
+      {s.snapshot && (
+        <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded border border-slate-700 mb-3" />
+      )}
+      {s.code && s.code.trim() && (
+        <>
+          <pre className="text-xs font-mono text-teal-200 bg-slate-950/60 border border-slate-700 rounded p-3 mb-2 overflow-x-auto whitespace-pre-wrap">{s.code}</pre>
+          <button onClick={handleRun} disabled={running}
+            className="w-full mb-3 border border-teal-400/40 text-teal-300 disabled:border-slate-700 disabled:text-slate-500 rounded py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-teal-400/10">
+            <IconZap size={13} /> {running ? "Running…" : "Run this code"}
+          </button>
+          {/* Always in the DOM (not gated on hasRun) — runPython needs to find
+              this element synchronously when Run is clicked, before React
+              has had a chance to flush the hasRun state update. Hidden via
+              CSS instead of unmounting. */}
+          <div className={hasRun ? "mb-3" : "hidden"}>
+            <div id={targetId} tabIndex={0}
+              className="w-full bg-white rounded border border-slate-600 outline-none mb-2"
+              style={{ minHeight: 180 }} />
+            {output && (
+              <pre className="text-xs font-mono text-slate-300 bg-slate-950/60 border border-slate-700 rounded p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">{output}</pre>
+            )}
+            {runError && (
+              <div className="text-xs font-mono text-red-300 bg-red-500/10 border border-red-400/40 rounded p-2">{runError}</div>
+            )}
+          </div>
+        </>
+      )}
+      <input placeholder="Optional note if sending back..." value={note}
+        onChange={(e) => setNote(e.target.value)}
+        className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-slate-400 mb-3" />
+      <div className="flex gap-2">
+        <button onClick={() => onReview(s.id, "rejected", note)}
+          className="flex-1 border border-red-400/40 text-red-300 rounded py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-red-400/10">
+          <IconRedo size={13} /> Send back
+        </button>
+        <button onClick={() => onReview(s.id, "approved", "")}
+          className="flex-1 bg-teal-400 text-slate-900 font-semibold rounded py-1.5 text-sm flex items-center justify-center gap-1">
+          <IconCheck size={13} /> Approve
+        </button>
+      </div>
+    </Panel>
   );
 }
 
