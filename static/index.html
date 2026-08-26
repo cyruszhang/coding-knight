@@ -109,6 +109,13 @@ function runPython(code, targetId, onOutput) {
 
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
 
+const GRID_BG = {
+  backgroundColor: "#0F2942",
+  backgroundImage: "linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)",
+  backgroundSize: "28px 28px",
+  minHeight: "100vh",
+};
+
 const DIFFICULTY = {
   easy: { label: "EASY", color: "#5EEAD4" },
   medium: { label: "MEDIUM", color: "#F5A623" },
@@ -275,23 +282,16 @@ function App() {
     }
   }
 
-  const gridBg = {
-    backgroundColor: "#0F2942",
-    backgroundImage: "linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)",
-    backgroundSize: "28px 28px",
-    minHeight: "100vh",
-  };
-
   if (loading) {
     return (
-      <div style={gridBg} className="flex items-center justify-center">
+      <div style={GRID_BG} className="flex items-center justify-center">
         <div className="text-teal-300 font-mono text-sm tracking-widest animate-pulse">CONNECTING…</div>
       </div>
     );
   }
 
   return (
-    <div style={gridBg} className="text-slate-100">
+    <div style={GRID_BG} className="text-slate-100">
       {error && (
         <div className="bg-red-500/20 border-b border-red-400/40 text-red-200 text-sm px-4 py-2 flex items-center gap-2 font-mono">
           <IconAlert /> {error}
@@ -511,11 +511,11 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
   );
 }
 
-function TopBar({ onBack, label }) {
+function TopBar({ onBack, label, backLabel = "Switch" }) {
   return (
     <div className="flex items-center justify-between mb-6">
       <button onClick={onBack} className="text-slate-400 hover:text-slate-200 flex items-center gap-1 text-sm">
-        <IconBack size={15} /> Switch
+        <IconBack size={15} /> {backLabel}
       </button>
       <div className="font-mono text-xs tracking-widest text-amber-400 flex items-center gap-1">
         <IconTerminal size={13} /> {label}
@@ -558,7 +558,16 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
+  const [entered, setEntered] = useState(false);
   const canSubmit = explanation.trim().length >= 10 && hasRun;
+
+  // Slide in from the right on mount rather than popping up as a dialog —
+  // this is a detail page, not a modal, so it gets the same full-screen
+  // treatment as the rest of the app (opaque GRID_BG, no dimmed backdrop).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   async function handleRun() {
     setRunning(true);
@@ -577,11 +586,17 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="w-full max-w-3xl my-4">
-        <Panel>
-          <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
-          <div className="text-xs text-slate-500 font-mono mb-4">Worth {task.points} points</div>
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div style={GRID_BG}
+        className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
+        <div className="max-w-3xl mx-auto px-4 py-6 pb-16 text-slate-100">
+          <TopBar onBack={onCancel} backLabel="Back" label={task.title.toUpperCase()} />
+
+          <Panel className="mb-4">
+            <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
+            <div className="text-xs text-slate-500 font-mono mb-3">Worth {task.points} points</div>
+            <div className="text-sm text-slate-400">{task.brief}</div>
+          </Panel>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
             <div>
@@ -610,22 +625,21 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             </div>
           </div>
 
-          <label className="text-sm text-slate-300 mb-2 block">In your own words — what does your code do?</label>
-          <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={3}
-            placeholder="Explain it like Dad hasn't seen it..."
-            className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-sm text-slate-100 outline-none focus:border-teal-300 resize-none mb-4" />
+          <Panel>
+            <label className="text-sm text-slate-300 mb-2 block">In your own words — what does your code do?</label>
+            <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={3}
+              placeholder="Explain it like Dad hasn't seen it..."
+              className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-sm text-slate-100 outline-none focus:border-teal-300 resize-none mb-4" />
 
-          <div className="flex gap-2">
-            <button onClick={onCancel} className="flex-1 border border-slate-600 rounded py-2 text-sm text-slate-300 hover:bg-slate-800">Cancel</button>
             <button disabled={!canSubmit} onClick={handleSubmit}
-              className="flex-1 bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+              className="w-full bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
               <IconSend size={14} /> Submit
             </button>
-          </div>
-          {!hasRun && (
-            <div className="text-xs text-slate-500 font-mono mt-2 text-center">Run your code at least once before submitting.</div>
-          )}
-        </Panel>
+            {!hasRun && (
+              <div className="text-xs text-slate-500 font-mono mt-2 text-center">Run your code at least once before submitting.</div>
+            )}
+          </Panel>
+        </div>
       </div>
     </div>
   );
