@@ -89,7 +89,12 @@ function runPython(code, targetId, onOutput) {
     output: onOutput,
     read: skulptBuiltinRead,
     __future__: Sk.python3,
-    execLimit: 8000,
+    // Turtle animates movement over real time by default (that's the
+    // charm of it) — a correct program with a lot of drawing (nested
+    // loops, many shapes) can legitimately take a while to finish
+    // animating, so this needs real headroom, not just enough to catch
+    // a true infinite loop.
+    execLimit: 30000,
     yieldLimit: 200,
   });
   (Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = targetId;
