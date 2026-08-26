@@ -191,6 +191,9 @@ def init_db():
     _ensure_column(db, "tasks", "source", "source TEXT NOT NULL DEFAULT 'seed'")
     _ensure_column(db, "tasks", "status", "status TEXT NOT NULL DEFAULT 'active'")
     _ensure_column(db, "tasks", "skills", "skills TEXT")
+    # A rendered snapshot of the kid's turtle-canvas output at submit time —
+    # genuinely optional (no default makes sense), nullable.
+    _ensure_column(db, "submissions", "snapshot", "snapshot TEXT")
 
     for kid_id, name in KIDS:
         db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
@@ -358,10 +361,10 @@ def create_submission():
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     db = get_db()
     db.execute(
-        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id, snapshot)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
         (sub_id, data["taskId"], data["title"], int(data["points"]),
-         data.get("explanation", ""), data.get("code", ""), now, data["kidId"]),
+         data.get("explanation", ""), data.get("code", ""), now, data["kidId"], data.get("snapshot")),
     )
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)))

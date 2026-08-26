@@ -96,7 +96,7 @@ def row_to_submission(row):
         "id": row["id"], "taskId": row["task_id"], "title": row["title"], "points": row["points"],
         "explanation": row["explanation"], "code": row["code"], "status": row["status"],
         "reviewNote": row["review_note"], "submittedAt": row["submitted_at"], "reviewedAt": row["reviewed_at"],
-        "kidId": row["kid_id"],
+        "kidId": row["kid_id"], "snapshot": row["snapshot"],
     }
 
 

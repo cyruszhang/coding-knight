@@ -8,6 +8,8 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js"></script>
 <link rel="apple-touch-icon" href="data:image/png;base64,">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -65,6 +67,44 @@ async function apiDelete(path, pin) {
   const res = await fetch(API + path, { method: "DELETE", headers: pinHeaders(pin) });
   if (!res.ok) throw new Error("DELETE " + path + " failed (" + res.status + ")");
   return res.json();
+}
+
+// ---------- in-browser Python execution (Skulpt) ----------
+function skulptBuiltinRead(x) {
+  if (Sk.builtinFiles === undefined || Sk.builtinFiles["files"][x] === undefined) {
+    throw "File not found: '" + x + "'";
+  }
+  return Sk.builtinFiles["files"][x];
+}
+
+// Runs `code` with turtle output drawn into the element with id `targetId`.
+// Clears any previous drawing first (Skulpt stacks a new canvas into the
+// target on every run otherwise) and focuses the target afterward so
+// keyboard-driven turtle programs (onkey) work without an extra click —
+// same as a real turtle/tkinter window needing focus.
+function runPython(code, targetId, onOutput) {
+  const target = document.getElementById(targetId);
+  target.innerHTML = "";
+  Sk.configure({
+    output: onOutput,
+    read: skulptBuiltinRead,
+    __future__: Sk.python3,
+    execLimit: 8000,
+    yieldLimit: 200,
+  });
+  (Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = targetId;
+  return Sk.misceval.asyncToPromise(function () {
+    return Sk.importMainWithBody("<stdin>", false, code, true);
+  }).then(
+    function () {
+      target.focus();
+      return { ok: true };
+    },
+    function (err) {
+      target.focus();
+      return { ok: false, error: err.toString() };
+    }
+  );
 }
 
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
@@ -140,11 +180,11 @@ function App() {
     setRole("kid");
   }
 
-  async function submitTask(taskId, explanation, code) {
+  async function submitTask(taskId, explanation, code, snapshot) {
     const task = tasks.find(t => t.id === taskId);
     try {
       const created = await apiPost("/submissions", {
-        taskId, title: task.title, points: task.points, explanation, code, kidId: selectedKid.id,
+        taskId, title: task.title, points: task.points, explanation, code, snapshot, kidId: selectedKid.id,
       });
       setSubmissions([...submissions, created]);
     } catch (e) {
@@ -397,7 +437,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <TopBar onBack={onBack} label={kid.name.toUpperCase()} />
       <div className="mb-4 text-xs font-mono text-slate-500 flex items-center gap-2">
-        <IconTerminal size={13} /> Write your code in Mu Editor on the computer — then come back here to submit.
+        <IconTerminal size={13} /> Pick a task, write your code right here, and watch it draw.
       </div>
       <div className="mb-6"><GaugeBar balance={balance} minutesAvailable={minutesAvailable} /></div>
 
@@ -443,12 +483,21 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
 
       {approved.length > 0 && (
         <Section label={"COMPLETED (" + approved.length + ")"}>
-          {approved.map(s => (
-            <div key={s.id} className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0">
-              <span className="text-slate-400 text-sm flex items-center gap-2"><IconCheck size={14} className="text-teal-300" /> {s.title}</span>
-              <span className="font-mono text-xs text-teal-300">+{s.points}</span>
-            </div>
-          ))}
+          <div className="grid grid-cols-3 gap-2">
+            {approved.map(s => (
+              <div key={s.id} className="flex flex-col items-center gap-1">
+                {s.snapshot ? (
+                  <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded border border-slate-700/50" />
+                ) : (
+                  <div className="w-full aspect-square flex items-center justify-center bg-slate-900/40 rounded border border-slate-700/50">
+                    <IconCheck size={20} className="text-teal-300" />
+                  </div>
+                )}
+                <span className="text-xs text-slate-400 text-center leading-tight">{s.title}</span>
+                <span className="font-mono text-xs text-teal-300">+{s.points}</span>
+              </div>
+            ))}
+          </div>
         </Section>
       )}
 
@@ -456,7 +505,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
           code={code} setCode={setCode}
           onCancel={() => { setActiveTask(null); setExplanation(""); setCode(""); }}
-          onSubmit={() => { onSubmit(activeTask.id, explanation, code); setActiveTask(null); setExplanation(""); setCode(""); }} />
+          onSubmit={(snapshot) => { onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); }} />
       )}
     </div>
   );
@@ -505,28 +554,77 @@ function TaskCard({ task, onOpen }) {
 }
 
 function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit }) {
-  const canSubmit = explanation.trim().length >= 10;
+  const [hasRun, setHasRun] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [output, setOutput] = useState("");
+  const [runError, setRunError] = useState(null);
+  const canSubmit = explanation.trim().length >= 10 && hasRun;
+
+  async function handleRun() {
+    setRunning(true);
+    setRunError(null);
+    let out = "";
+    setOutput("");
+    const result = await runPython(code, "turtle-target", (text) => { out += text; setOutput(out); });
+    if (!result.ok) setRunError(result.error);
+    setHasRun(true);
+    setRunning(false);
+  }
+
+  function handleSubmit() {
+    const canvas = document.querySelector("#turtle-target canvas");
+    onSubmit(canvas ? canvas.toDataURL("image/png") : null);
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="w-full max-w-md my-4">
+      <div className="w-full max-w-3xl my-4">
         <Panel>
           <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
           <div className="text-xs text-slate-500 font-mono mb-4">Worth {task.points} points</div>
+
+          <div className="grid sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-sm text-slate-300 mb-2 block">Your code</label>
+              <textarea value={code} onChange={(e) => setCode(e.target.value)} rows={12} autoFocus
+                placeholder="import turtle&#10;t = turtle.Turtle()&#10;..."
+                className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-xs font-mono text-teal-200 outline-none focus:border-teal-300 resize-none" />
+              <button onClick={handleRun} disabled={running}
+                className="mt-2 w-full bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                <IconZap size={14} /> {running ? "Running…" : "Run"}
+              </button>
+              {output && (
+                <pre className="mt-2 text-xs font-mono text-slate-300 bg-slate-950/60 border border-slate-700 rounded p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">{output}</pre>
+              )}
+              {runError && (
+                <div className="mt-2 text-xs font-mono text-red-300 bg-red-500/10 border border-red-400/40 rounded p-2">
+                  Your code hit a snag: {runError}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
+              <div id="turtle-target" tabIndex={0}
+                className="w-full bg-white rounded border border-slate-600 outline-none"
+                style={{ minHeight: 220 }} />
+            </div>
+          </div>
+
           <label className="text-sm text-slate-300 mb-2 block">In your own words — what does your code do?</label>
-          <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={3} autoFocus
+          <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={3}
             placeholder="Explain it like Dad hasn't seen it..."
             className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-sm text-slate-100 outline-none focus:border-teal-300 resize-none mb-4" />
-          <label className="text-sm text-slate-300 mb-2 block">Paste your code here (optional, but Dad will want to see it)</label>
-          <textarea value={code} onChange={(e) => setCode(e.target.value)} rows={6}
-            placeholder="import turtle&#10;t = turtle.Turtle()&#10;..."
-            className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-xs font-mono text-teal-200 outline-none focus:border-teal-300 resize-none" />
-          <div className="flex gap-2 mt-4">
+
+          <div className="flex gap-2">
             <button onClick={onCancel} className="flex-1 border border-slate-600 rounded py-2 text-sm text-slate-300 hover:bg-slate-800">Cancel</button>
-            <button disabled={!canSubmit} onClick={onSubmit}
+            <button disabled={!canSubmit} onClick={handleSubmit}
               className="flex-1 bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
               <IconSend size={14} /> Submit
             </button>
           </div>
+          {!hasRun && (
+            <div className="text-xs text-slate-500 font-mono mt-2 text-center">Run your code at least once before submitting.</div>
+          )}
         </Panel>
       </div>
     </div>
@@ -574,6 +672,9 @@ function ReviewTab({ pending, kids, onReview }) {
             <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
           </div>
           <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
+          {s.snapshot && (
+            <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded border border-slate-700 mb-3" />
+          )}
           {s.code && s.code.trim() && (
             <pre className="text-xs font-mono text-teal-200 bg-slate-950/60 border border-slate-700 rounded p-3 mb-3 overflow-x-auto whitespace-pre-wrap">{s.code}</pre>
           )}
