@@ -102,6 +102,7 @@ function App() {
   const [kids, setKids] = useState([]);
   const [selectedKid, setSelectedKid] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [redemptions, setRedemptions] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -116,10 +117,11 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const [k, t, s, r, cfg] = await Promise.all([
-        apiGet("/kids"), apiGet("/tasks"), apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
+      const [k, t, sug, s, r, cfg] = await Promise.all([
+        apiGet("/kids"), apiGet("/tasks"), apiGet("/tasks/suggestions"),
+        apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
       ]);
-      setKids(k); setTasks(t); setSubmissions(s); setRedemptions(r); setSettings(cfg);
+      setKids(k); setTasks(t); setSuggestions(sug); setSubmissions(s); setRedemptions(r); setSettings(cfg);
     } catch (e) {
       setError("Couldn't reach the server. Is app.py running? (" + e.message + ")");
     } finally {
@@ -187,6 +189,25 @@ function App() {
     }
   }
 
+  async function approveSuggestion(taskId) {
+    try {
+      const approved = await apiPost("/tasks/suggestions/" + taskId + "/approve", {}, parentPin);
+      setSuggestions(suggestions.filter(t => t.id !== taskId));
+      setTasks([...tasks, approved]);
+    } catch (e) {
+      setError("Approve failed: " + e.message);
+    }
+  }
+
+  async function rejectSuggestion(taskId) {
+    try {
+      await apiDelete("/tasks/" + taskId, parentPin);
+      setSuggestions(suggestions.filter(t => t.id !== taskId));
+    } catch (e) {
+      setError("Reject failed: " + e.message);
+    }
+  }
+
   async function updateSettings(next) {
     try {
       const updated = await apiPut("/settings", next, parentPin);
@@ -250,8 +271,9 @@ function App() {
           onSubmit={submitTask} onRedeem={redeem} onBack={() => { setRole(null); setSelectedKid(null); }} />
       )}
       {role === "parent" && (
-        <ParentView kids={kids} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
+        <ParentView kids={kids} tasks={tasks} suggestions={suggestions} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
+          onApproveSuggestion={approveSuggestion} onRejectSuggestion={rejectSuggestion}
           onUpdateSettings={updateSettings} onBack={() => { setRole(null); setParentPin(null); }} />
       )}
     </div>
@@ -516,21 +538,23 @@ function kidName(kids, kidId) {
   return k ? k.name : kidId;
 }
 
-function ParentView({ kids, tasks, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onUpdateSettings, onBack }) {
+function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onBack }) {
   const [tab, setTab] = useState("review");
   const pending = submissions.filter(s => s.status === "pending");
+  const tabCount = { review: pending.length, suggestions: suggestions.length };
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <TopBar onBack={onBack} label="PARENT" />
       <div className="flex gap-1 mb-6 font-mono text-xs">
-        {["review", "tasks", "history", "settings"].map(key => (
+        {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
             className={"px-3 py-1.5 rounded-t border-b-2 tracking-wide " + (tab === key ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300")}>
-            {key.toUpperCase()}{key === "review" && pending.length > 0 ? " (" + pending.length + ")" : ""}
+            {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
       </div>
       {tab === "review" && <ReviewTab pending={pending} kids={kids} onReview={onReview} />}
+      {tab === "suggestions" && <SuggestionsTab suggestions={suggestions} kids={kids} onApprove={onApproveSuggestion} onReject={onRejectSuggestion} />}
       {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
       {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
       {tab === "settings" && <SettingsTab settings={settings} onUpdateSettings={onUpdateSettings} />}
@@ -568,6 +592,46 @@ function ReviewTab({ pending, kids, onReview }) {
           </div>
         </Panel>
       ))}
+    </div>
+  );
+}
+
+function SuggestionsTab({ suggestions, kids, onApprove, onReject }) {
+  if (suggestions.length === 0) return <div className="text-slate-500 text-sm italic">No agent-proposed tasks waiting for review.</div>;
+  return (
+    <div className="grid gap-3">
+      {suggestions.map(t => {
+        const d = DIFFICULTY[t.difficulty];
+        return (
+          <Panel key={t.id}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-slate-100">{t.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, t.kidId)})</span></span>
+              <span className="flex items-center gap-2">
+                <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
+                <span className="font-mono text-teal-300 text-sm">+{t.points}</span>
+              </span>
+            </div>
+            <div className="text-sm text-slate-400 mb-3">{t.brief}</div>
+            {t.skills && t.skills.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {t.skills.map(s => (
+                  <span key={s} className="font-mono text-xs px-1.5 py-0.5 rounded border border-slate-600 text-slate-400">{s}</span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => onReject(t.id)}
+                className="flex-1 border border-red-400/40 text-red-300 rounded py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-red-400/10">
+                <IconX size={13} /> Reject
+              </button>
+              <button onClick={() => onApprove(t.id)}
+                className="flex-1 bg-teal-400 text-slate-900 font-semibold rounded py-1.5 text-sm flex items-center justify-center gap-1">
+                <IconCheck size={13} /> Approve
+              </button>
+            </div>
+          </Panel>
+        );
+      })}
     </div>
   );
 }

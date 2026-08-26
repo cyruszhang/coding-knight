@@ -6,6 +6,7 @@ Run with:  python app.py
 Then visit http://<this-machine's-LAN-IP>:5000 from any device on the same network.
 """
 
+import json
 import time
 import uuid
 from datetime import date
@@ -25,41 +26,59 @@ DEFAULT_SETTINGS = {
 
 SEED_TASKS = [
     ("e1", "Draw Your Initials", 10, "easy",
-     "Draw your initials using only forward, right, left, penup, and pendown. No loops required — but you might find you want one."),
+     "Draw your initials using only forward, right, left, penup, and pendown. No loops required — but you might find you want one.",
+     ["shapes"]),
     ("e2", "Any-Sided Shape", 10, "easy",
-     "Write code that can draw a triangle, pentagon, hexagon — any shape — by changing just one number. Figure out the relationship between number of sides and turn angle."),
+     "Write code that can draw a triangle, pentagon, hexagon — any shape — by changing just one number. Figure out the relationship between number of sides and turn angle.",
+     ["shapes", "loops_basic"]),
     ("e3", "Draw a House", 10, "easy",
-     "Combine a square and a triangle to draw a simple house shape — walls plus a roof, in one continuous drawing."),
+     "Combine a square and a triangle to draw a simple house shape — walls plus a roof, in one continuous drawing.",
+     ["shapes"]),
     ("e4", "Rainbow Line", 10, "easy",
-     "Draw a series of lines side by side, each a different color, using a loop and t.color()."),
+     "Draw a series of lines side by side, each a different color, using a loop and t.color().",
+     ["colors", "loops_basic"]),
     ("e5", "Smiley Face", 10, "easy",
-     "Use t.circle() plus penup/pendown to draw a face — one big circle, two small circles for eyes, a curved mouth."),
+     "Use t.circle() plus penup/pendown to draw a face — one big circle, two small circles for eyes, a curved mouth.",
+     ["shapes"]),
     ("e6", "Nested Squares", 10, "easy",
-     "Draw several squares of increasing size, one inside the other, using a single loop where the side length grows each time."),
+     "Draw several squares of increasing size, one inside the other, using a single loop where the side length grows each time.",
+     ["shapes", "loops_basic"]),
     ("e7", "Flower with Circles", 10, "easy",
-     "Draw several overlapping circles arranged in a ring, using a loop that turns the turtle a bit before drawing each circle."),
+     "Draw several overlapping circles arranged in a ring, using a loop that turns the turtle a bit before drawing each circle.",
+     ["shapes", "loops_basic"]),
     ("e8", "Draw Your Number", 10, "easy",
-     "Pick a number that means something to you (your age, your hockey jersey number) and draw it big using lines and curves."),
+     "Pick a number that means something to you (your age, your hockey jersey number) and draw it big using lines and curves.",
+     ["shapes"]),
     ("e9", "Dotted Path", 10, "easy",
-     "Use t.dot() inside a loop to draw a dashed or dotted line or shape instead of a solid one."),
+     "Use t.dot() inside a loop to draw a dashed or dotted line or shape instead of a solid one.",
+     ["loops_basic"]),
     ("e10", "Maze Border", 10, "easy",
-     "Draw a rectangle border big enough to be a maze outline, and mark the starting corner with a dot."),
+     "Draw a rectangle border big enough to be a maze outline, and mark the starting corner with a dot.",
+     ["shapes"]),
     ("m1", "Growing Spiral", 20, "medium",
-     "Draw a spiral where each side is longer than the last. You'll need a loop where the forward distance changes each time through."),
+     "Draw a spiral where each side is longer than the last. You'll need a loop where the forward distance changes each time through.",
+     ["loops_basic"]),
     ("m2", "Checkerboard Grid", 20, "medium",
-     "Draw an 8x8 grid of squares, alternating filled and unfilled. This needs a loop inside a loop."),
+     "Draw an 8x8 grid of squares, alternating filled and unfilled. This needs a loop inside a loop.",
+     ["nested_loops"]),
     ("m3", "Random Walk", 20, "medium",
-     "Make the turtle take 50 random steps in random directions using the random module. Bonus: change color as it goes."),
+     "Make the turtle take 50 random steps in random directions using the random module. Bonus: change color as it goes.",
+     ["randomness", "loops_basic"]),
     ("m4", "Five-Pointed Star", 20, "medium",
-     "Draw a five-pointed star without lifting the pen — one loop, one clever turn angle. Hunt for the angle yourself before looking it up."),
+     "Draw a five-pointed star without lifting the pen — one loop, one clever turn angle. Hunt for the angle yourself before looking it up.",
+     ["loops_basic"]),
     ("h1", "Traffic Light Simulator", 30, "hard",
-     "Draw three circles (red, yellow, green). Using time.sleep(), light up one at a time in sequence by filling it in."),
+     "Draw three circles (red, yellow, green). Using time.sleep(), light up one at a time in sequence by filling it in.",
+     ["functions"]),
     ("h2", "Recursive Tree", 30, "hard",
-     "Draw a branching tree using a function that calls itself. Ask an AI to explain recursion conceptually first, then build it yourself."),
+     "Draw a branching tree using a function that calls itself. Ask an AI to explain recursion conceptually first, then build it yourself.",
+     ["recursion", "functions"]),
     ("h3", "Keyboard Etch-a-Sketch", 30, "hard",
-     "Arrow keys move the turtle, spacebar changes color, a key clears the screen. Real interactivity, not just run-once."),
+     "Arrow keys move the turtle, spacebar changes color, a key clears the screen. Real interactivity, not just run-once.",
+     ["event_handling"]),
     ("h4", "Design Your Own", 30, "hard",
-     "Pick something you want the turtle to draw or do. Break it into steps yourself before writing any code."),
+     "Pick something you want the turtle to draw or do. Break it into steps yourself before writing any code.",
+     []),
 ]
 
 KIDS = [
@@ -69,25 +88,35 @@ KIDS = [
 
 SEED_TASKS_KELLY = [
     ("k-e1", "Draw a Square", 10, "easy",
-     "Draw a square using forward and right — four sides, turning the same amount each time."),
+     "Draw a square using forward and right — four sides, turning the same amount each time.",
+     ["shapes"]),
     ("k-e2", "Draw a Rectangle", 10, "easy",
-     "Like the square, but two of the sides are longer than the other two."),
+     "Like the square, but two of the sides are longer than the other two.",
+     ["shapes"]),
     ("k-e3", "Draw a Triangle", 10, "easy",
-     "Draw a triangle using forward and right three times. Turn 120 degrees each time."),
+     "Draw a triangle using forward and right three times. Turn 120 degrees each time.",
+     ["shapes"]),
     ("k-e4", "Draw Your Initial", 10, "easy",
-     "Pick the first letter of your name and draw it using forward, right, left, penup, and pendown."),
+     "Pick the first letter of your name and draw it using forward, right, left, penup, and pendown.",
+     ["shapes"]),
     ("k-e5", "Color Change Line", 10, "easy",
-     "Draw a few lines side by side, each a different color, using t.color()."),
+     "Draw a few lines side by side, each a different color, using t.color().",
+     ["colors"]),
     ("k-e6", "Draw a Circle", 10, "easy",
-     "Use t.circle() to draw a circle. Try a few different sizes."),
+     "Use t.circle() to draw a circle. Try a few different sizes.",
+     ["shapes"]),
     ("k-e7", "Simple Smiley", 10, "easy",
-     "Draw a face — one big circle for the head, two small circles for eyes."),
+     "Draw a face — one big circle for the head, two small circles for eyes.",
+     ["shapes"]),
     ("k-e8", "Star Points", 10, "easy",
-     "Draw a five-pointed star without lifting the pen. Turn the turtle 144 degrees each time."),
+     "Draw a five-pointed star without lifting the pen. Turn the turtle 144 degrees each time.",
+     ["shapes"]),
     ("k-m1", "Rainbow Loop", 20, "medium",
-     "Use a loop to draw several lines, each a different color, instead of writing the same code over and over."),
+     "Use a loop to draw several lines, each a different color, instead of writing the same code over and over.",
+     ["colors", "loops_basic"]),
     ("k-m2", "Nested Shapes", 20, "medium",
-     "Draw two squares, one bigger than the other, so one sits inside the other."),
+     "Draw two squares, one bigger than the other, so one sits inside the other.",
+     ["shapes"]),
 ]
 
 
@@ -156,6 +185,12 @@ def init_db():
     # (all Shayne's, pre-Kelly) in the same statement.
     for table in ("tasks", "submissions", "redemptions"):
         _ensure_column(db, table, "kid_id", "kid_id TEXT NOT NULL DEFAULT 'shayne'")
+    # source/status/skills were added after tasks already existed — same
+    # backfill-via-DEFAULT approach: every pre-existing task is a 'seed'
+    # task that's already 'active'.
+    _ensure_column(db, "tasks", "source", "source TEXT NOT NULL DEFAULT 'seed'")
+    _ensure_column(db, "tasks", "status", "status TEXT NOT NULL DEFAULT 'active'")
+    _ensure_column(db, "tasks", "skills", "skills TEXT")
 
     for kid_id, name in KIDS:
         db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
@@ -167,8 +202,20 @@ def init_db():
         )["c"]
         if count == 0:
             db.executemany(
-                "INSERT INTO tasks (id, title, points, difficulty, brief, kid_id) VALUES (?, ?, ?, ?, ?, ?)",
-                [(tid, title, points, diff, brief, kid_id) for tid, title, points, diff, brief in seed],
+                """INSERT INTO tasks (id, title, points, difficulty, brief, kid_id, skills, source, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'seed', 'active')""",
+                [(tid, title, points, diff, brief, kid_id, json.dumps(skills))
+                 for tid, title, points, diff, brief, skills in seed],
+            )
+        else:
+            # skills was added after these tasks already existed — the
+            # ALTER TABLE has no DEFAULT for it (nothing sensible to
+            # backfill blindly), so backfill from the seed definitions by
+            # id instead. WHERE skills IS NULL keeps this idempotent and
+            # never overwrites anything already tagged.
+            db.executemany(
+                "UPDATE tasks SET skills=? WHERE id=? AND skills IS NULL",
+                [(json.dumps(skills), tid) for tid, title, points, diff, brief, skills in seed],
             )
     # Seed settings only if missing.
     for key, value in DEFAULT_SETTINGS.items():
@@ -225,10 +272,37 @@ def list_tasks():
     db = get_db()
     kid = request.args.get("kid")
     if kid:
-        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks WHERE kid_id=?", (kid,)))
+        rows = dbmod.fetchall(db.execute(
+            "SELECT * FROM tasks WHERE kid_id=? AND status='active'", (kid,)
+        ))
     else:
-        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks"))
+        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks WHERE status='active'"))
     return jsonify([row_to_task(r) for r in rows])
+
+
+@app.route("/api/tasks/suggestions", methods=["GET"])
+def list_suggestions():
+    db = get_db()
+    kid = request.args.get("kid")
+    if kid:
+        rows = dbmod.fetchall(db.execute(
+            "SELECT * FROM tasks WHERE kid_id=? AND status='queued'", (kid,)
+        ))
+    else:
+        rows = dbmod.fetchall(db.execute("SELECT * FROM tasks WHERE status='queued'"))
+    return jsonify([row_to_task(r) for r in rows])
+
+
+@app.route("/api/tasks/suggestions/<task_id>/approve", methods=["POST"])
+@require_parent_pin
+def approve_suggestion(task_id):
+    db = get_db()
+    db.execute("UPDATE tasks SET status='active' WHERE id=?", (task_id,))
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(row_to_task(row))
 
 
 @app.route("/api/tasks", methods=["POST"])
@@ -241,7 +315,8 @@ def create_task():
     task_id = "t_" + uuid.uuid4().hex[:10]
     db = get_db()
     db.execute(
-        "INSERT INTO tasks (id, title, points, difficulty, brief, kid_id) VALUES (?, ?, ?, ?, ?, ?)",
+        """INSERT INTO tasks (id, title, points, difficulty, brief, kid_id, source, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'parent', 'active')""",
         (task_id, data["title"], int(data["points"]), data["difficulty"], data["brief"], data["kidId"]),
     )
     dbmod.commit_and_sync(db)
