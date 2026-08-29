@@ -175,6 +175,144 @@ const IconRedo = (p) => <Icon {...p}>↺</Icon>;
 const IconAward = (p) => <Icon {...p}>🏆</Icon>;
 const IconAlert = (p) => <Icon {...p}>⚠</Icon>;
 
+// ---------- mystery-box (盲盒) task picker ----------
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function skillExposureCounts(kidTasks, kidSubmissions) {
+  const submittedIds = new Set(kidSubmissions.map(s => s.taskId));
+  const counts = {};
+  kidTasks.filter(t => submittedIds.has(t.id)).forEach(t => {
+    (t.skills || []).forEach(sk => { counts[sk] = (counts[sk] || 0) + 1; });
+  });
+  return counts;
+}
+
+// Picks up to 3 tasks favoring skills least represented in the kid's
+// submission history so far — same skill-gap idea curate_tasks.py uses to
+// generate new tasks, applied here to rank ones that already exist.
+function pickMysteryTasks(available, kidTasks, kidSubmissions, excludeIds = []) {
+  const counts = skillExposureCounts(kidTasks, kidSubmissions);
+  const candidates = available.filter(t => !excludeIds.includes(t.id));
+  const scored = candidates.map(t => ({
+    task: t,
+    score: t.skills && t.skills.length ? Math.min(...t.skills.map(sk => counts[sk] || 0)) : 0.5,
+  }));
+  scored.sort((a, b) => a.score - b.score);
+  const shortlist = scored.slice(0, 6).map(s => s.task);
+  return shuffle(shortlist).slice(0, 3);
+}
+
+const BOX_VARIANTS = [
+  { lid: "#F5A623", body: "#B45309" },
+  { lid: "#5EEAD4", body: "#0D9488" },
+  { lid: "#F87171", body: "#B91C1C" },
+  { lid: "#A78BFA", body: "#6D28D9" },
+  { lid: "#60A5FA", body: "#1D4ED8" },
+  { lid: "#FDE047", body: "#CA8A04" },
+];
+
+function MysteryBox({ variant, size = 88 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100">
+      <rect x="18" y="42" width="64" height="42" rx="4" fill={variant.body} />
+      <rect x="14" y="30" width="72" height="16" rx="3" fill={variant.lid} />
+      <rect x="44" y="30" width="12" height="54" fill={variant.body} opacity="0.85" />
+      <rect x="14" y="36" width="72" height="6" fill={variant.body} opacity="0.85" />
+      <text x="50" y="68" textAnchor="middle" fontSize="26" fontWeight="bold" fill="white" opacity="0.9">?</text>
+    </svg>
+  );
+}
+
+function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
+  const [boxes, setBoxes] = useState(() =>
+    pickMysteryTasks(available, kidTasks, kidSubmissions).map(task => ({ task }))
+  );
+  const [variants, setVariants] = useState(() => shuffle(BOX_VARIANTS).slice(0, boxes.length));
+  const [openedIndex, setOpenedIndex] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
+  const [explanation, setExplanation] = useState("");
+  const [code, setCode] = useState("");
+
+  function rerollSlot(index) {
+    const shownIds = boxes.map(b => b.task.id);
+    const [replacement] = pickMysteryTasks(available, kidTasks, kidSubmissions, shownIds);
+    setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task } : b)));
+    setVariants(prev => {
+      const usedElsewhere = prev.filter((_, i) => i !== index);
+      const fresh = shuffle(BOX_VARIANTS.filter(v => !usedElsewhere.includes(v)))[0] || shuffle(BOX_VARIANTS)[0];
+      return prev.map((v, i) => (i === index ? fresh : v));
+    });
+    setOpenedIndex(null);
+  }
+
+  if (boxes.length === 0 || !boxes.some(b => b.task)) {
+    return <div className="text-slate-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-3">
+        {boxes.map((b, i) => b.task && (
+          <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
+            className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
+            <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
+            <span className="font-mono text-xs text-slate-500">MYSTERY QUEST</span>
+          </button>
+        ))}
+      </div>
+
+      {openedIndex !== null && boxes[openedIndex] && boxes[openedIndex].task && (
+        <div className="mt-4">
+          <Panel>
+            {(() => {
+              const task = boxes[openedIndex].task;
+              const d = DIFFICULTY[task.difficulty];
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
+                      <div className="text-sm text-slate-400 leading-snug">{task.brief}</div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
+                      <span className="font-mono text-teal-300 text-sm flex items-center gap-1"><IconStar size={12} />{task.points}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setActiveTask(task)}
+                      className="flex-1 bg-teal-500 hover:bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm transition-colors">
+                      Start This Quest
+                    </button>
+                    <button onClick={() => rerollSlot(openedIndex)}
+                      className="px-3 py-2 rounded text-sm font-mono text-slate-400 hover:text-slate-200 border border-slate-600 flex items-center gap-1">
+                      <IconRedo size={13} /> Put It Back
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </Panel>
+        </div>
+      )}
+
+      {activeTask && (
+        <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
+          code={code} setCode={setCode}
+          onCancel={() => { rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); }}
+          onSubmit={(snapshot) => { onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); setOpenedIndex(null); }} />
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -480,9 +618,6 @@ function GaugeBar({ balance, minutesAvailable }) {
 }
 
 function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, onSubmit, onRedeem, onBack }) {
-  const [activeTask, setActiveTask] = useState(null);
-  const [explanation, setExplanation] = useState("");
-  const [code, setCode] = useState("");
   const [redeemMinutes, setRedeemMinutes] = useState(15);
 
   const kidTasks = tasks.filter(t => t.kidId === kid.id);
@@ -546,11 +681,8 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
         </Section>
       )}
 
-      <Section label={"TASKS (" + available.length + ")"}>
-        <div className="grid gap-3">
-          {available.map(t => <TaskCard key={t.id} task={t} onOpen={() => setActiveTask(t)} />)}
-          {available.length === 0 && <div className="text-slate-500 text-sm italic">All caught up — ask Dad for new tasks.</div>}
-        </div>
+      <Section label="MYSTERY QUESTS">
+        <MysteryBoxPicker available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
       </Section>
 
       {approved.length > 0 && (
@@ -571,13 +703,6 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
             ))}
           </div>
         </Section>
-      )}
-
-      {activeTask && (
-        <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
-          code={code} setCode={setCode}
-          onCancel={() => { setActiveTask(null); setExplanation(""); setCode(""); }}
-          onSubmit={(snapshot) => { onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); }} />
       )}
     </div>
   );
@@ -602,26 +727,6 @@ function Section({ label, children }) {
       <div className="font-mono text-xs text-slate-500 tracking-widest mb-2">{label}</div>
       {children}
     </div>
-  );
-}
-
-function TaskCard({ task, onOpen }) {
-  const d = DIFFICULTY[task.difficulty];
-  return (
-    <button onClick={onOpen} className="text-left">
-      <Panel className="hover:border-teal-300/50 transition-colors">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
-            <div className="text-sm text-slate-400 leading-snug">{task.brief}</div>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
-            <span className="font-mono text-teal-300 text-sm flex items-center gap-1"><IconStar size={12} />{task.points}</span>
-          </div>
-        </div>
-      </Panel>
-    </button>
   );
 }
 
