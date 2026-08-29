@@ -11,40 +11,40 @@ Scheduled via .github/workflows/curate-tasks.yml
 """
 
 import json
+import os
 import uuid
 
-import anthropic
+from openai import OpenAI
 
 import db as dbmod
 from curriculum import allowed_skills
 
-MODEL = "claude-opus-5"
+MODEL = "qwen3.8-max"
+# DashScope's OpenAI-compatible endpoint differs by account region — override
+# via DASHSCOPE_BASE_URL in .env if your key was issued on the China console
+# rather than the international one.
+DASHSCOPE_BASE_URL = os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
 MAX_ACTIVE_BACKLOG = 3
 MAX_QUEUED_SUGGESTIONS = 3
 PROPOSALS_PER_RUN = 3
 
-TASK_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "tasks": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "brief": {"type": "string"},
-                    "points": {"type": "integer"},
-                    "difficulty": {"type": "string", "enum": ["easy", "medium", "hard"]},
-                    "skills": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["title", "brief", "points", "difficulty", "skills"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    "required": ["tasks"],
-    "additionalProperties": False,
-}
+REQUIRED_TASK_FIELDS = {"title": str, "brief": str, "points": int, "difficulty": str, "skills": list}
+
+
+def validate_proposed_task(t):
+    # DashScope's compatible-mode API only supports response_format:
+    # json_object (a bare "valid JSON" guarantee), not OpenAI/Anthropic-style
+    # schema-enforced output — so a malformed field here is a real
+    # possibility, not just defensive paranoia. Catching it here means one
+    # bad proposal logs an error for one kid instead of crashing or writing
+    # a broken row into the shared production database.
+    for field, typ in REQUIRED_TASK_FIELDS.items():
+        if field not in t:
+            raise ValueError(f"missing field {field!r} in proposed task: {t}")
+        if not isinstance(t[field], typ):
+            raise ValueError(f"field {field!r} has wrong type in proposed task: {t}")
+    if t["difficulty"] not in ("easy", "medium", "hard"):
+        raise ValueError(f"invalid difficulty in proposed task: {t}")
 
 
 def curate_for_kid(client, db, kid_id, kid_name):
@@ -95,16 +95,20 @@ Tasks they already have (active or already suggested — do not duplicate these)
 Propose {PROPOSALS_PER_RUN} new tasks that target the skill(s) least represented in their
 history so far. Keep tasks in the same spirit as their existing ones: a short
 turtle-graphics drawing or interaction exercise, described in 1-3 sentences,
-appropriate for a kid at this level. Points: 10 for easy, 20 for medium, 30 for hard."""
+appropriate for a kid at this level. Points: 10 for easy, 20 for medium, 30 for hard.
 
-    response = client.messages.create(
+Respond with a single JSON object of this exact shape, and nothing else:
+{{"tasks": [{{"title": str, "brief": str, "points": int, "difficulty": "easy"|"medium"|"hard", "skills": [str, ...]}}]}}"""
+
+    response = client.chat.completions.create(
         model=MODEL,
-        max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
-        output_config={"format": {"type": "json_schema", "schema": TASK_SCHEMA}},
+        response_format={"type": "json_object"},
     )
-    text = next(b.text for b in response.content if b.type == "text")
+    text = response.choices[0].message.content
     proposed = json.loads(text)["tasks"]
+    for t in proposed:
+        validate_proposed_task(t)
 
     for t in proposed:
         task_id = "a_" + uuid.uuid4().hex[:10]
@@ -118,7 +122,7 @@ appropriate for a kid at this level. Points: 10 for easy, 20 for medium, 30 for 
 
 
 def main():
-    client = anthropic.Anthropic()
+    client = OpenAI(api_key=os.environ["DASHSCOPE_API_KEY"], base_url=DASHSCOPE_BASE_URL)
     db = dbmod.connect()
     kids = dbmod.fetchall(db.execute("SELECT * FROM kids"))
     for kid in kids:
