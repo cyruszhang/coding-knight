@@ -24,7 +24,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 // ---------- storage: talks to the Flask+SQLite backend over the API ----------
 const API = "/api";
@@ -194,19 +194,73 @@ function skillExposureCounts(kidTasks, kidSubmissions) {
   return counts;
 }
 
-// Picks up to 3 tasks favoring skills least represented in the kid's
-// submission history so far — same skill-gap idea curate_tasks.py uses to
-// generate new tasks, applied here to rank ones that already exist.
-function pickMysteryTasks(available, kidTasks, kidSubmissions, excludeIds = []) {
-  const counts = skillExposureCounts(kidTasks, kidSubmissions);
-  const candidates = available.filter(t => !excludeIds.includes(t.id));
-  const scored = candidates.map(t => ({
+const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
+
+// A kid's "current level" is the hardest difficulty they have an
+// approved submission for — their proven ceiling, not just whatever
+// they most recently attempted (a rejected hard attempt shouldn't count).
+function currentDifficultyLevel(kidTasks, kidSubmissions) {
+  const approvedIds = new Set(kidSubmissions.filter(s => s.status === "approved").map(s => s.taskId));
+  const cleared = kidTasks.filter(t => approvedIds.has(t.id)).map(t => t.difficulty);
+  if (cleared.length === 0) return "easy";
+  return cleared.reduce((max, d) => DIFFICULTY_ORDER.indexOf(d) > DIFFICULTY_ORDER.indexOf(max) ? d : max, "easy");
+}
+
+function scoreTasks(tasks, counts) {
+  return tasks.map(t => ({
     task: t,
     score: t.skills && t.skills.length ? Math.min(...t.skills.map(sk => counts[sk] || 0)) : 0.5,
-  }));
-  scored.sort((a, b) => a.score - b.score);
-  const shortlist = scored.slice(0, 6).map(s => s.task);
-  return shuffle(shortlist).slice(0, 3);
+  })).sort((a, b) => a.score - b.score);
+}
+
+// Skill-gap shortlist-then-shuffle, same idea curate_tasks.py uses to
+// generate new tasks, applied here to rank ones that already exist.
+function pickFromPool(pool, counts, excludeIds) {
+  const candidates = pool.filter(t => !excludeIds.includes(t.id));
+  const shortlist = scoreTasks(candidates, counts).slice(0, 6).map(s => s.task);
+  return shuffle(shortlist)[0] || null;
+}
+
+// tier "current" pulls from the kid's proven-ceiling difficulty; tier
+// "stretch" pulls from one difficulty above that. Falls back to any
+// remaining available task (still skill-gap scored) if the target
+// bucket is empty, so a box still fills whenever any task is left.
+function pickOneForTier(tier, available, counts, level, excludeIds) {
+  const nextLevel = DIFFICULTY_ORDER[Math.min(DIFFICULTY_ORDER.indexOf(level) + 1, DIFFICULTY_ORDER.length - 1)];
+  const target = tier === "stretch" ? nextLevel : level;
+  const bucket = available.filter(t => t.difficulty === target);
+  return pickFromPool(bucket, counts, excludeIds) || pickFromPool(available, counts, excludeIds);
+}
+
+// Picks up to 3 tasks: 2 at the kid's current level, 1 stretch task one
+// difficulty higher, favoring skills least represented in their
+// submission history so far within each bucket.
+function pickMysteryTasks(available, kidTasks, kidSubmissions, excludeIds = []) {
+  const counts = skillExposureCounts(kidTasks, kidSubmissions);
+  const level = currentDifficultyLevel(kidTasks, kidSubmissions);
+  const used = excludeIds.slice();
+  const boxes = [];
+  for (const tier of ["current", "current", "stretch"]) {
+    const task = pickOneForTier(tier, available, counts, level, used);
+    if (!task) continue;
+    boxes.push({ task, tier });
+    used.push(task.id);
+  }
+  return boxes;
+}
+
+// In-progress code/explanation, so an accidental tab close doesn't lose
+// work. Scoped per kid+task; cleared on a deliberate forfeit or submit,
+// left alone otherwise (that's the whole point).
+function draftKey(kidId, taskId) { return "codequest:draft:" + kidId + ":" + taskId; }
+function loadDraft(kidId, taskId) {
+  try { return JSON.parse(localStorage.getItem(draftKey(kidId, taskId))) || {}; } catch (e) { return {}; }
+}
+function saveDraft(kidId, taskId, draft) {
+  try { localStorage.setItem(draftKey(kidId, taskId), JSON.stringify(draft)); } catch (e) {}
+}
+function clearDraft(kidId, taskId) {
+  try { localStorage.removeItem(draftKey(kidId, taskId)); } catch (e) {}
 }
 
 const BOX_VARIANTS = [
@@ -230,10 +284,8 @@ function MysteryBox({ variant, size = 88 }) {
   );
 }
 
-function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
-  const [boxes, setBoxes] = useState(() =>
-    pickMysteryTasks(available, kidTasks, kidSubmissions).map(task => ({ task }))
-  );
+function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit }) {
+  const [boxes, setBoxes] = useState(() => pickMysteryTasks(available, kidTasks, kidSubmissions));
   const [variants, setVariants] = useState(() => shuffle(BOX_VARIANTS).slice(0, boxes.length));
   const [openedIndex, setOpenedIndex] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
@@ -242,8 +294,10 @@ function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
 
   function rerollSlot(index) {
     const shownIds = boxes.map(b => b.task.id);
-    const [replacement] = pickMysteryTasks(available, kidTasks, kidSubmissions, shownIds);
-    setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task } : b)));
+    const counts = skillExposureCounts(kidTasks, kidSubmissions);
+    const level = currentDifficultyLevel(kidTasks, kidSubmissions);
+    const replacement = pickOneForTier(boxes[index].tier, available, counts, level, shownIds);
+    setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task, tier: b.tier } : b)));
     setVariants(prev => {
       const usedElsewhere = prev.filter((_, i) => i !== index);
       const fresh = shuffle(BOX_VARIANTS.filter(v => !usedElsewhere.includes(v)))[0] || shuffle(BOX_VARIANTS)[0];
@@ -251,6 +305,18 @@ function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
     });
     setOpenedIndex(null);
   }
+
+  function startTask(task) {
+    const draft = loadDraft(kidId, task.id);
+    setExplanation(draft.explanation || "");
+    setCode(draft.code || "");
+    setActiveTask(task);
+  }
+
+  useEffect(() => {
+    if (!activeTask) return;
+    saveDraft(kidId, activeTask.id, { code, explanation });
+  }, [code, explanation, activeTask, kidId]);
 
   if (boxes.length === 0 || !boxes.some(b => b.task)) {
     return <div className="text-slate-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
@@ -287,7 +353,7 @@ function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setActiveTask(task)}
+                    <button onClick={() => startTask(task)}
                       className="flex-1 bg-teal-500 hover:bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm transition-colors">
                       Start This Quest
                     </button>
@@ -306,8 +372,8 @@ function MysteryBoxPicker({ available, kidTasks, kidSubmissions, onSubmit }) {
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
           code={code} setCode={setCode}
-          onCancel={() => { rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); }}
-          onSubmit={(snapshot) => { onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); setOpenedIndex(null); }} />
+          onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); }}
+          onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); setOpenedIndex(null); }} />
       )}
     </div>
   );
@@ -682,7 +748,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
       )}
 
       <Section label="MYSTERY QUESTS">
-        <MysteryBoxPicker available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
+        <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
       </Section>
 
       {approved.length > 0 && (
@@ -735,7 +801,13 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
+  const [stopped, setStopped] = useState(false);
   const [entered, setEntered] = useState(false);
+  const codeRef = useRef(null);
+  // A ref, not state: handleRun's in-flight async closure needs the live
+  // value at the moment runPython's promise settles, not the value from
+  // when Run was clicked — state would be stale inside that closure.
+  const stoppedRef = useRef(false);
   const canSubmit = explanation.trim().length >= 10 && hasRun;
 
   // Slide in from the right on mount rather than popping up as a dialog —
@@ -749,16 +821,46 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   async function handleRun() {
     setRunning(true);
     setRunError(null);
+    setStopped(false);
+    stoppedRef.current = false;
     let out = "";
     setOutput("");
     try {
       const result = await runPython(code, "turtle-target", (text) => { out += text; setOutput(out); });
-      if (!result.ok) setRunError(result.error);
+      if (!result.ok && !stoppedRef.current) setRunError(result.error);
     } catch (e) {
-      setRunError(e.message || String(e));
+      if (!stoppedRef.current) setRunError(e.message || String(e));
     } finally {
       setHasRun(true);
       setRunning(false);
+    }
+  }
+
+  // Skulpt periodically checks elapsed time against Sk.execLimit and
+  // throws its own TimeLimitError when exceeded (verified directly
+  // against the library) — forcing it to 0 mid-run trips that check at
+  // the next yield point instead of waiting out the normal 30s ceiling.
+  // Safe to mutate globally: only one run is ever in flight in this UI,
+  // and runPython's Sk.configure(...) resets execLimit on every call.
+  function handleStop() {
+    setStopped(true);
+    stoppedRef.current = true;
+    Sk.execLimit = 0;
+  }
+
+  function handleCodeKeyDown(e) {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const ta = codeRef.current;
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    if (e.shiftKey) {
+      const lineStart = code.lastIndexOf("\n", start - 1) + 1;
+      const removable = Math.min(4, code.slice(lineStart, start).match(/^ */)[0].length);
+      setCode(code.slice(0, lineStart) + code.slice(lineStart + removable));
+      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start - removable; });
+    } else {
+      setCode(code.slice(0, start) + "    " + code.slice(end));
+      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 4; });
     }
   }
 
@@ -783,21 +885,28 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="text-sm text-slate-300 mb-2 block">Your code</label>
-              <textarea value={code} onChange={(e) => setCode(e.target.value)} rows={12} autoFocus
+              <textarea ref={codeRef} value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={handleCodeKeyDown}
+                rows={12} autoFocus
                 placeholder="import turtle&#10;t = turtle.Turtle()&#10;..."
                 className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-xs font-mono text-teal-200 outline-none focus:border-teal-300 resize-none" />
-              <button onClick={handleRun} disabled={running}
-                className="mt-2 w-full bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
-                <IconZap size={14} /> {running ? "Running…" : "Run"}
-              </button>
-              {output && (
-                <pre className="mt-2 text-xs font-mono text-slate-300 bg-slate-950/60 border border-slate-700 rounded p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">{output}</pre>
+              {running ? (
+                <button onClick={handleStop}
+                  className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                  ■ Stop
+                </button>
+              ) : (
+                <button onClick={handleRun}
+                  className="mt-2 w-full bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                  <IconZap size={14} /> Run
+                </button>
               )}
-              {runError && (
-                <div className="mt-2 text-xs font-mono text-red-300 bg-red-500/10 border border-red-400/40 rounded p-2">
-                  Your code hit a snag: {runError}
-                </div>
-              )}
+              <label className="text-sm text-slate-300 mt-3 mb-2 block">Output</label>
+              <pre className={"text-xs font-mono rounded p-2 max-h-40 overflow-y-auto whitespace-pre-wrap border " +
+                (stopped ? "text-amber-300 bg-amber-500/10 border-amber-400/40"
+                 : runError ? "text-red-300 bg-red-500/10 border-red-400/40"
+                 : "text-slate-300 bg-slate-950/60 border-slate-700")}>
+                {stopped ? "Stopped." : runError ? ("Your code hit a snag: " + runError) : (output || "Nothing printed yet — click Run.")}
+              </pre>
             </div>
             <div>
               <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
