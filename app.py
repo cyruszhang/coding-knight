@@ -320,6 +320,30 @@ def list_suggestions():
     return jsonify([row_to_task(r) for r in rows])
 
 
+@app.route("/api/tasks/suggestions", methods=["POST"])
+def create_suggestion():
+    # Deliberately unauthenticated, unlike POST /api/tasks: a suggestion is
+    # inert until a parent explicitly approves it in Parent > Suggestions,
+    # so the approval step is the real security boundary here, not this
+    # endpoint. This is what lets a scheduled agent (no DB credentials, no
+    # PIN) propose new tasks over plain HTTPS.
+    data = request.get_json(force=True)
+    for field in ("title", "brief", "points", "difficulty", "kidId"):
+        if field not in data:
+            return jsonify({"error": f"missing field: {field}"}), 400
+    task_id = "a_" + uuid.uuid4().hex[:10]
+    db = get_db()
+    db.execute(
+        """INSERT INTO tasks (id, title, points, difficulty, brief, kid_id, skills, source, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'agent', 'queued')""",
+        (task_id, data["title"], int(data["points"]), data["difficulty"], data["brief"], data["kidId"],
+         json.dumps(data.get("skills", []))),
+    )
+    dbmod.commit_and_sync(db)
+    row = dbmod.fetchone(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+    return jsonify(row_to_task(row)), 201
+
+
 @app.route("/api/tasks/suggestions/<task_id>/approve", methods=["POST"])
 @require_parent_pin
 def approve_suggestion(task_id):
