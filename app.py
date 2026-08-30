@@ -79,6 +79,66 @@ SEED_TASKS = [
     ("h4", "Design Your Own", 30, "hard",
      "Pick something you want the turtle to draw or do. Break it into steps yourself before writing any code.",
      []),
+    ("e11", "Zigzag Path", 10, "easy",
+     "Draw a zigzag line by alternating turning right and left inside a loop, moving forward a bit each time.",
+     ["loops_basic"]),
+    ("e12", "Polka Dot Row", 10, "easy",
+     "Use t.dot() inside a loop to draw a neat row of evenly-spaced dots, moving forward between each one.",
+     ["loops_basic"]),
+    ("e13", "Simple Arrow", 10, "easy",
+     "Draw an arrow — a straight shaft with a small triangular head — using only forward, right, and left.",
+     ["shapes"]),
+    ("e14", "Color Blocks", 10, "easy",
+     "Draw four filled squares in a row, each a different color, using begin_fill() and end_fill().",
+     ["colors", "shapes"]),
+    ("e15", "Star Necklace", 10, "easy",
+     "Draw a row of small five-pointed stars strung along an invisible line — pen up to move between each one.",
+     ["shapes", "loops_basic"]),
+    ("e16", "Picture Frame", 10, "easy",
+     "Draw a rectangle, then a smaller rectangle inside it, so it looks like a picture frame.",
+     ["shapes"]),
+    ("e17", "Sunburst Lines", 10, "easy",
+     "Draw 12 lines radiating out from the center point like sun rays, using a loop that turns the same angle each time.",
+     ["loops_basic"]),
+    ("e18", "Traffic Cone", 10, "easy",
+     "Draw a triangle on top of a small rectangle base, colored orange, to look like a traffic cone.",
+     ["shapes", "colors"]),
+    ("e19", "Your Initials, Twice", 10, "easy",
+     "Draw your first and last initial side by side, reusing the same drawing code for both if you can.",
+     ["shapes"]),
+    ("e20", "Bullseye Target", 10, "easy",
+     "Draw four circles of the same center point but different sizes, alternating between two colors, like an archery target.",
+     ["shapes", "colors", "loops_basic"]),
+    ("m5", "Color-Alternating Fence", 20, "medium",
+     "Draw a row of fence posts, alternating between two colors using an if/else inside your loop based on whether the post number is even or odd.",
+     ["colors", "loops_basic", "conditionals"]),
+    ("m6", "Grid of Dots", 20, "medium",
+     "Draw an NxN grid of dots using a loop inside a loop — the outer loop for rows, the inner loop for columns.",
+     ["nested_loops"]),
+    ("m7", "Random Confetti", 20, "medium",
+     "Scatter 100 small dots of random colors at random positions on the screen using the random module.",
+     ["randomness"]),
+    ("m8", "Reusable Flower Function", 20, "medium",
+     "Write a function draw_flower(size) that draws one flower, then call it three times at different spots to plant a small garden.",
+     ["functions", "shapes"]),
+    ("m9", "Rainbow Nested Squares", 20, "medium",
+     "Draw several squares nested inside each other like Nested Squares, but give each one the next color from a list as you go.",
+     ["nested_loops", "colors"]),
+    ("h5", "Recursive Snowflake", 30, "hard",
+     "Write a function that draws a jagged snowflake edge by calling itself with a smaller size each time, stopping at a small base-case size.",
+     ["recursion", "functions"]),
+    ("h6", "Turtle Race Game", 30, "hard",
+     "Two turtles start at the same line. Each turn, move each one forward a random amount; stop and print the winner once one crosses a finish line.",
+     ["randomness", "conditionals", "loops_basic"]),
+    ("h7", "Click-to-Draw", 30, "hard",
+     "Use turtle's onscreenclick so that clicking anywhere on the canvas draws a dot there — build a picture just by clicking around.",
+     ["event_handling"]),
+    ("h8", "Guarded Drawing", 30, "hard",
+     "Write a function that only draws a shape if a variable you set in your code matches a specific value — otherwise it does nothing.",
+     ["functions", "conditionals"]),
+    ("h9", "Star Generator Function", 30, "hard",
+     "Write a function star(n) that can draw a star with ANY number of points by figuring out the correct turn angle inside the function itself.",
+     ["functions", "loops_basic"]),
 ]
 
 KIDS = [
@@ -117,6 +177,66 @@ SEED_TASKS_KELLY = [
     ("k-m2", "Nested Shapes", 20, "medium",
      "Draw two squares, one bigger than the other, so one sits inside the other.",
      ["shapes"]),
+    ("k-e9", "Draw a Pentagon", 10, "easy",
+     "Draw a five-sided shape using forward and right, turning 72 degrees each time.",
+     ["shapes"]),
+    ("k-e10", "Draw a Hexagon", 10, "easy",
+     "Draw a six-sided shape using forward and right, turning 60 degrees each time.",
+     ["shapes"]),
+    ("k-e11", "Simple Cross", 10, "easy",
+     "Draw a plus-sign shape using forward, right, and penup to lift the pen between the two lines.",
+     ["shapes"]),
+    ("k-e12", "Two Circles Side by Side", 10, "easy",
+     "Draw two separate circles next to each other, using penup and pendown to move between them.",
+     ["shapes"]),
+    ("k-e13", "Colorful Square", 10, "easy",
+     "Draw a square where every one of the four sides is a different color.",
+     ["colors", "shapes"]),
+    ("k-e14", "Simple Sun", 10, "easy",
+     "Draw a circle with a few short lines coming out of it, like rays of sunshine.",
+     ["shapes"]),
+    ("k-e15", "Dotted Circle", 10, "easy",
+     "Use t.dot() while moving forward a little and turning slightly, over and over, to trace out a circle made of dots.",
+     ["loops_basic"]),
+    ("k-e16", "Stacked Rectangles", 10, "easy",
+     "Draw three rectangles stacked on top of each other, like a simple building.",
+     ["shapes"]),
+    ("k-e17", "Your Favorite Color Shape", 10, "easy",
+     "Pick your favorite color and draw any shape you like, filled in with that color using begin_fill() and end_fill().",
+     ["colors", "shapes"]),
+    ("k-e18", "Sailboat", 10, "easy",
+     "Combine a triangle (the sail) and a rectangle (the boat) to draw a simple sailboat.",
+     ["shapes"]),
+    ("k-e19", "Diamond Shape", 10, "easy",
+     "Draw a diamond by turning the turtle 45 degrees before drawing a square shape.",
+     ["shapes"]),
+    ("k-e20", "Color List Line", 10, "easy",
+     "Make a list of three colors, then draw a line made of segments that cycle through that list of colors.",
+     ["colors", "loops_basic"]),
+    ("k-e21", "Fan of Lines", 10, "easy",
+     "Draw six lines spreading out from one point, turning the same amount between each one, using a loop.",
+     ["loops_basic"]),
+    ("k-e22", "Traffic Light Shapes", 10, "easy",
+     "Draw three circles stacked vertically, colored red, yellow, and green, like a traffic light (no need to light them up one at a time).",
+     ["shapes", "colors"]),
+    ("k-m3", "Rainbow Circle Ring", 20, "medium",
+     "Draw eight circles arranged in a ring, each a different color, using a loop that turns the turtle before each circle.",
+     ["colors", "loops_basic"]),
+    ("k-m4", "Loop-Powered Pentagon", 20, "medium",
+     "Draw the same pentagon as before, but this time use a loop instead of writing forward and right five separate times.",
+     ["loops_basic"]),
+    ("k-m5", "Two Nested Circles", 20, "medium",
+     "Like Nested Shapes, but with two circles of different sizes, one inside the other.",
+     ["shapes"]),
+    ("k-m6", "Growing Staircase", 20, "medium",
+     "Draw a staircase shape where each step is a little longer than the last, using a loop where the forward distance grows each time.",
+     ["loops_basic"]),
+    ("k-m7", "Color-Changing Star", 20, "medium",
+     "Draw your five-pointed star again, but change the pen color before drawing each of the five lines using a loop.",
+     ["colors", "loops_basic"]),
+    ("k-m8", "Garden Row", 20, "medium",
+     "Draw a row of five small flowers (a circle with a few petal lines), spaced apart using penup and a loop.",
+     ["shapes", "loops_basic"]),
 ]
 
 
@@ -204,28 +324,27 @@ def init_db():
     for kid_id, name in KIDS:
         db.execute("INSERT OR IGNORE INTO kids (id, name) VALUES (?, ?)", (kid_id, name))
 
-    # Seed each kid's tasks only if that kid has none yet (first run per kid).
+    # Seed each kid's tasks by id, every run — INSERT OR IGNORE means a task
+    # already in the DB (by id) is left completely alone (never overwritten,
+    # even if its text changed here), while any id newly added to SEED_TASKS/
+    # SEED_TASKS_KELLY in code gets picked up on the next deploy without a
+    # one-off migration script.
     for kid_id, seed in (("shayne", SEED_TASKS), ("kelly", SEED_TASKS_KELLY)):
-        count = dbmod.fetchone(
-            db.execute("SELECT COUNT(*) c FROM tasks WHERE kid_id=?", (kid_id,))
-        )["c"]
-        if count == 0:
-            db.executemany(
-                """INSERT INTO tasks (id, title, points, difficulty, brief, kid_id, skills, source, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'seed', 'active')""",
-                [(tid, title, points, diff, brief, kid_id, json.dumps(skills))
-                 for tid, title, points, diff, brief, skills in seed],
-            )
-        else:
-            # skills was added after these tasks already existed — the
-            # ALTER TABLE has no DEFAULT for it (nothing sensible to
-            # backfill blindly), so backfill from the seed definitions by
-            # id instead. WHERE skills IS NULL keeps this idempotent and
-            # never overwrites anything already tagged.
-            db.executemany(
-                "UPDATE tasks SET skills=? WHERE id=? AND skills IS NULL",
-                [(json.dumps(skills), tid) for tid, title, points, diff, brief, skills in seed],
-            )
+        db.executemany(
+            """INSERT OR IGNORE INTO tasks (id, title, points, difficulty, brief, kid_id, skills, source, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'seed', 'active')""",
+            [(tid, title, points, diff, brief, kid_id, json.dumps(skills))
+             for tid, title, points, diff, brief, skills in seed],
+        )
+        # skills was added after some of these tasks already existed — the
+        # ALTER TABLE has no DEFAULT for it (nothing sensible to backfill
+        # blindly), so backfill from the seed definitions by id instead.
+        # WHERE skills IS NULL keeps this idempotent and never overwrites
+        # anything already tagged.
+        db.executemany(
+            "UPDATE tasks SET skills=? WHERE id=? AND skills IS NULL",
+            [(json.dumps(skills), tid) for tid, title, points, diff, brief, skills in seed],
+        )
     # Seed settings only if missing.
     for key, value in DEFAULT_SETTINGS.items():
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
