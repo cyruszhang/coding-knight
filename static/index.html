@@ -974,13 +974,15 @@ function ReviewTab({ pending, kids, onReview }) {
   );
 }
 
-function ReviewCard({ s, kids, onReview }) {
-  const [note, setNote] = useState("");
+// Shared by ReviewCard (pending work) and HistoryTab (already-decided
+// work) — the snapshot/code/Run/output block is identical either way,
+// only what surrounds it (approve/reject vs. nothing) differs.
+function RunnableSubmission({ s, targetPrefix }) {
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
-  const targetId = "review-target-" + s.id;
+  const targetId = targetPrefix + s.id;
 
   async function handleRun() {
     setRunning(true);
@@ -999,12 +1001,7 @@ function ReviewCard({ s, kids, onReview }) {
   }
 
   return (
-    <Panel>
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-slate-100">{s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
-        <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
-      </div>
-      <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
+    <>
       {s.snapshot && (
         <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded border border-slate-700 mb-3" />
       )}
@@ -1032,6 +1029,21 @@ function ReviewCard({ s, kids, onReview }) {
           </div>
         </>
       )}
+    </>
+  );
+}
+
+function ReviewCard({ s, kids, onReview }) {
+  const [note, setNote] = useState("");
+
+  return (
+    <Panel>
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-semibold text-slate-100">{s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
+        <span className="font-mono text-teal-300 text-sm">+{s.points}</span>
+      </div>
+      <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
+      <RunnableSubmission s={s} targetPrefix="review-target-" />
       <input placeholder="Optional note if sending back..." value={note}
         onChange={(e) => setNote(e.target.value)}
         className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-slate-400 mb-3" />
@@ -1147,6 +1159,39 @@ function TasksTab({ tasks, kids, onAddTask, onDeleteTask }) {
   );
 }
 
+// A completed submission's code/snapshot/explanation stayed hidden once
+// reviewed — this makes past work reviewable and runnable again, same as
+// pending work already is, just without the approve/reject actions since
+// that decision is already made.
+function HistoryCard({ s, kids }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="border border-slate-700/50 rounded px-3 py-2 text-sm">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between text-left">
+        <span className="flex items-center gap-2">
+          {s.status === "approved" ? <IconCheck size={14} className="text-teal-300" /> : <IconX size={14} className="text-red-400" />}
+          {s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span>
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-xs text-slate-400">{s.status === "approved" ? ("+" + s.points) : "sent back"}</span>
+          <IconBack size={12} className={"text-slate-500 transition-transform " + (expanded ? "-rotate-90" : "rotate-180")} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-slate-700/50">
+          {s.explanation && (
+            <div className="text-sm text-slate-400 italic mb-3 border-l-2 border-slate-600 pl-3">"{s.explanation}"</div>
+          )}
+          <RunnableSubmission s={s} targetPrefix="history-target-" />
+          {s.reviewNote && (
+            <div className="text-xs font-mono text-slate-400 bg-slate-800/60 border border-slate-700 rounded p-2">Note: {s.reviewNote}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HistoryTab({ submissions, redemptions, kids }) {
   const reviewed = submissions.filter(s => s.status !== "pending")
     .sort((a, b) => new Date(b.reviewedAt || b.submittedAt) - new Date(a.reviewedAt || a.submittedAt));
@@ -1155,15 +1200,7 @@ function HistoryTab({ submissions, redemptions, kids }) {
       <div>
         <div className="font-mono text-xs text-slate-500 tracking-widest mb-2">SUBMISSIONS</div>
         <div className="grid gap-2">
-          {reviewed.map(s => (
-            <div key={s.id} className="flex items-center justify-between border border-slate-700/50 rounded px-3 py-2 text-sm">
-              <span className="flex items-center gap-2">
-                {s.status === "approved" ? <IconCheck size={14} className="text-teal-300" /> : <IconX size={14} className="text-red-400" />}
-                {s.title} <span className="font-mono text-xs text-slate-500">({kidName(kids, s.kidId)})</span>
-              </span>
-              <span className="font-mono text-xs text-slate-400">{s.status === "approved" ? ("+" + s.points) : "sent back"}</span>
-            </div>
-          ))}
+          {reviewed.map(s => <HistoryCard key={s.id} s={s} kids={kids} />)}
           {reviewed.length === 0 && <div className="text-slate-500 text-sm italic">No reviewed submissions yet.</div>}
         </div>
       </div>
