@@ -892,6 +892,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
                   one-click path. */}
               <textarea ref={codeRef} value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={handleCodeKeyDown}
                 onPaste={(e) => e.preventDefault()}
+                spellCheck={false} autoCapitalize="off" autoCorrect="off"
                 rows={12} autoFocus
                 placeholder="import turtle&#10;t = turtle.Turtle()&#10;..."
                 className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-xs font-mono text-teal-200 outline-none focus:border-teal-300 resize-none" />
