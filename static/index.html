@@ -135,6 +135,29 @@ function runPython(code, targetId, onOutput) {
   );
 }
 
+// Skulpt's turtle module renders on two stacked canvases inside the
+// target div, not one: a permanent "drawing" layer (the actual lines/
+// shapes, lower z-index) and a "turtle sprite" layer redrawn every
+// frame to show just the cursor icon (higher z-index, appended after
+// the first). document.querySelector(...) grabbing the first canvas
+// in DOM order was silently capturing only the near-blank sprite layer
+// — every saved snapshot was just a turtle icon on white, no drawing.
+// Composites every canvas in the target in z-index order (not hardcoded
+// to "index 1 is always the drawing layer") so the snapshot matches
+// exactly what's visually on screen, turtle icon included.
+function captureCanvasSnapshot(targetId) {
+  const canvases = Array.from(document.querySelectorAll("#" + targetId + " canvas"));
+  if (canvases.length === 0) return null;
+  if (canvases.length === 1) return canvases[0].toDataURL("image/png");
+  const ordered = canvases.slice().sort((a, b) => (parseInt(a.style.zIndex) || 0) - (parseInt(b.style.zIndex) || 0));
+  const out = document.createElement("canvas");
+  out.width = ordered[0].width;
+  out.height = ordered[0].height;
+  const ctx = out.getContext("2d");
+  ordered.forEach(c => ctx.drawImage(c, 0, 0));
+  return out.toDataURL("image/png");
+}
+
 // Curated, not full IntelliSense — grounded in what the actual task
 // briefs (SEED_TASKS/SEED_TASKS_KELLY in app.py) reference, not a
 // generic Python/turtle dump.
@@ -965,8 +988,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   }
 
   function handleSubmit() {
-    const canvas = document.querySelector("#turtle-target canvas");
-    onSubmit(canvas ? canvas.toDataURL("image/png") : null);
+    onSubmit(captureCanvasSnapshot("turtle-target"));
   }
 
   return (
