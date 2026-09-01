@@ -24,11 +24,11 @@
     const { EditorView, keymap, lineNumbers, drawSelection, placeholder } = await import("https://esm.sh/@codemirror/view@6");
     const { defaultKeymap, history, historyKeymap, indentWithTab } = await import("https://esm.sh/@codemirror/commands@6");
     const { python } = await import("https://esm.sh/@codemirror/lang-python@6");
-    const { autocompletion, completeFromList, closeBrackets, closeBracketsKeymap, completionKeymap } = await import("https://esm.sh/@codemirror/autocomplete@6");
+    const { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } = await import("https://esm.sh/@codemirror/autocomplete@6");
     const { syntaxHighlighting, defaultHighlightStyle } = await import("https://esm.sh/@codemirror/language@6");
     return { EditorView, keymap, lineNumbers, drawSelection, placeholder,
              defaultKeymap, history, historyKeymap, indentWithTab, python,
-             autocompletion, completeFromList, closeBrackets, closeBracketsKeymap, completionKeymap,
+             autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap,
              syntaxHighlighting, defaultHighlightStyle };
   })();
 </script>
@@ -158,18 +158,57 @@ function captureCanvasSnapshot(targetId) {
   return out.toDataURL("image/png");
 }
 
-// Curated, not full IntelliSense — grounded in what the actual task
-// briefs (SEED_TASKS/SEED_TASKS_KELLY in app.py) reference, not a
-// generic Python/turtle dump.
-const CURATED_COMPLETIONS = [
-  ...["forward", "backward", "right", "left", "penup", "pendown", "goto", "setpos", "speed",
-      "circle", "dot", "color", "pencolor", "fillcolor", "begin_fill", "end_fill", "write",
-      "home", "clear", "onscreenclick", "onkey", "listen",
-      "range", "print", "len", "randint", "choice", "sleep"].map(label => ({ label, type: "function" })),
-  ...["def", "return", "if", "elif", "else", "for", "while", "in",
-      "True", "False", "and", "or", "not", "import"].map(label => ({ label, type: "keyword" })),
-  ...["random", "time"].map(label => ({ label, type: "type" })),
-];
+// Real completions via Pyodide + Jedi running in completion-worker.js (a
+// module Worker -- required, not a style choice: Pyodide's loader
+// rejects classic workers). Singleton, created lazily on first use so
+// browsing Mission Control never triggers the ~12MB download; reused
+// for the rest of the page session once started.
+let completionWorker = null;
+let completionRequestId = 0;
+const pendingCompletions = new Map(); // id -> resolve fn
+
+function getCompletionWorker() {
+  if (!completionWorker) {
+    completionWorker = new Worker("/completion-worker.js", { type: "module" });
+    completionWorker.onmessage = (e) => {
+      if (e.data.type === "complete-result") {
+        const p = pendingCompletions.get(e.data.id);
+        if (p) { p.resolve(e.data.completions); pendingCompletions.delete(e.data.id); }
+      }
+    };
+  }
+  return completionWorker;
+}
+
+// CM6 async completion source. Before Pyodide/Jedi finish their one-time
+// warm-up, the worker just hasn't posted anything back yet -- no special
+// loading state needed here, the request naturally waits.
+async function jediCompletionSource(context) {
+  const word = context.matchBefore(/\w*/);
+  // Right after a bare "." (member access), matchBefore(/\w*/) matches an
+  // EMPTY string at the cursor -- that's the single most important
+  // trigger case (real IDEs show the full member list immediately after
+  // typing "."), so it must NOT be treated as "nothing to complete".
+  // Only bail out when there's neither a partial word nor a dot just
+  // typed, and the request wasn't explicit (e.g. Ctrl+Space).
+  const dotted = context.matchBefore(/\.\w*/);
+  if (!dotted && (!word || (word.from == word.to && !context.explicit))) return null;
+  const worker = getCompletionWorker();
+  const line = context.state.doc.lineAt(context.pos);
+  const id = ++completionRequestId;
+  const completions = await new Promise((resolve) => {
+    pendingCompletions.set(id, { resolve });
+    worker.postMessage({
+      type: "complete", id,
+      source: context.state.doc.toString(),
+      line: line.number, column: context.pos - line.from,
+    });
+  });
+  // A newer keystroke superseded this request while it was in flight --
+  // discard rather than pop in a suggestion list for text already moved past.
+  if (id !== completionRequestId) return null;
+  return { from: word.from, options: completions.map(([name, type, doc]) => ({ label: name, type, info: doc || undefined })) };
+}
 
 // Matches the app's existing slate/teal palette (see GRID_BG, Panel,
 // and the old textarea's classes below) rather than pulling in a
@@ -203,7 +242,6 @@ function Editor({ value, onChange, onPasteDetected }) {
     let cancelled = false;
     window.__cmReady.then((CM) => {
       if (cancelled) return;
-      const completions = CM.completeFromList(CURATED_COMPLETIONS);
       const view = new CM.EditorView({
         doc: value,
         extensions: [
@@ -213,7 +251,7 @@ function Editor({ value, onChange, onPasteDetected }) {
           CM.closeBrackets(),
           CM.python(),
           CM.syntaxHighlighting(CM.defaultHighlightStyle),
-          CM.autocompletion({ override: [completions] }),
+          CM.autocompletion({ override: [jediCompletionSource] }),
           CM.keymap.of([CM.indentWithTab, ...CM.closeBracketsKeymap, ...CM.completionKeymap, ...CM.defaultKeymap, ...CM.historyKeymap]),
           CM.placeholder("import turtle\nt = turtle.Turtle()\n..."),
           CM.EditorView.domEventHandlers({ paste: () => { onPasteDetected(); } }),
