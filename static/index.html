@@ -825,6 +825,7 @@ function GaugeBar({ balance, minutesAvailable }) {
 
 function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, onSubmit, onRedeem, onBack }) {
   const [redeemMinutes, setRedeemMinutes] = useState(15);
+  const [viewingCompleted, setViewingCompleted] = useState(null);
 
   const kidTasks = tasks.filter(t => t.kidId === kid.id);
   const kidSubmissions = submissions.filter(s => s.kidId === kid.id);
@@ -895,21 +896,60 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
         <Section label={"COMPLETED (" + approved.length + ")"}>
           <div className="grid grid-cols-3 gap-2">
             {approved.map(s => (
-              <div key={s.id} className="flex flex-col items-center gap-1">
+              <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
                 {s.snapshot ? (
-                  <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded border border-slate-700/50" />
+                  <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors" />
                 ) : (
-                  <div className="w-full aspect-square flex items-center justify-center bg-slate-900/40 rounded border border-slate-700/50">
+                  <div className="w-full aspect-square flex items-center justify-center bg-slate-900/40 rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors">
                     <IconCheck size={20} className="text-teal-300" />
                   </div>
                 )}
                 <span className="text-xs text-slate-400 text-center leading-tight">{s.title}</span>
                 <span className="font-mono text-xs text-teal-300">+{s.points}</span>
-              </div>
+              </button>
             ))}
           </div>
         </Section>
       )}
+
+      {viewingCompleted && (
+        <CompletedDetail submission={viewingCompleted} onBack={() => setViewingCompleted(null)} />
+      )}
+    </div>
+  );
+}
+
+// Full-screen slide-in for a kid's own completed work — same GRID_BG/
+// TopBar treatment as SubmitModal, so tapping into and out of a task
+// feels consistent whether it's still open or already done. Read-only:
+// reuses RunnableSubmission (snapshot/code/Run/output) with no approve/
+// reject actions, since a completed task has nothing left to decide.
+function CompletedDetail({ submission, onBack }) {
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div style={GRID_BG}
+        className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
+        <div className="max-w-2xl mx-auto px-4 py-6 pb-16 text-slate-100">
+          <TopBar onBack={onBack} backLabel="Back" label={submission.title.toUpperCase()} />
+          <Panel className="mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <div className="font-semibold text-slate-100">{submission.title}</div>
+              <span className="font-mono text-teal-300 text-sm">+{submission.points}</span>
+            </div>
+            {submission.explanation && (
+              <div className="text-sm text-slate-400 italic mt-2 border-l-2 border-slate-600 pl-3">"{submission.explanation}"</div>
+            )}
+          </Panel>
+          <Panel>
+            <RunnableSubmission s={submission} targetPrefix="completed-target-" />
+          </Panel>
+        </div>
+      </div>
     </div>
   );
 }
