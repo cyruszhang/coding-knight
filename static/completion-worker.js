@@ -29,9 +29,18 @@ onmessage = async (e) => {
     pyodide.globals.set("_col", column);
     // Docstring truncated here (one line, 80 chars) rather than in the
     // main thread -- keeps the postMessage payload small.
+    //
+    // Dunder/private names (__init__, __class__, ...) sort alphabetically
+    // first and were dominating every completion list for methods no kid
+    // ever needs. Hidden by default, same convention IPython/Jupyter's
+    // tab-completion has used for years: shown again once the kid has
+    // actually typed a leading underscore themselves, so t.__init__ is
+    // still reachable if they're deliberately looking for it.
     const raw = pyodide.runPython(`
+      _prefix = __import__("re").search(r"[\\w]*$", _src.split(chr(10))[_line - 1][:_col]).group()
       [(c.name, c.type, (c.docstring() or "").split(chr(10))[0][:80])
-       for c in jedi.Script(_src).complete(_line, _col)]
+       for c in jedi.Script(_src).complete(_line, _col)
+       if not c.name.startswith("_") or _prefix.startswith("_")]
     `);
     postMessage({ type: "complete-result", id, completions: raw.toJs() });
   } catch (err) {
