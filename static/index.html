@@ -10,6 +10,28 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js"></script>
+<script type="module">
+  // The main app script below is type="text/babel" (in-browser JSX
+  // transform, no bundler) and can't use `import` directly, so this
+  // loads CodeMirror 6 as real ES modules and hands the pieces off via
+  // a single ready-promise on window that the Editor component awaits.
+  // Hand-picked subpackages rather than the "codemirror" convenience
+  // bundle: that package's default export came back as a plain
+  // function (not the expected extensions array) through this CDN, and
+  // basicSetup's search panel / fold gutter / lint gutter don't apply
+  // to a kid-facing turtle-graphics editor anyway.
+  window.__cmReady = (async () => {
+    const { EditorView, keymap, lineNumbers, drawSelection, placeholder } = await import("https://esm.sh/@codemirror/view@6");
+    const { defaultKeymap, history, historyKeymap, indentWithTab } = await import("https://esm.sh/@codemirror/commands@6");
+    const { python } = await import("https://esm.sh/@codemirror/lang-python@6");
+    const { autocompletion, completeFromList, closeBrackets, closeBracketsKeymap, completionKeymap } = await import("https://esm.sh/@codemirror/autocomplete@6");
+    const { syntaxHighlighting, defaultHighlightStyle } = await import("https://esm.sh/@codemirror/language@6");
+    return { EditorView, keymap, lineNumbers, drawSelection, placeholder,
+             defaultKeymap, history, historyKeymap, indentWithTab, python,
+             autocompletion, completeFromList, closeBrackets, closeBracketsKeymap, completionKeymap,
+             syntaxHighlighting, defaultHighlightStyle };
+  })();
+</script>
 <link rel="icon" type="image/svg+xml" href="/turtle-knight.svg">
 <link rel="apple-touch-icon" href="/turtle-knight.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -110,6 +132,91 @@ function runPython(code, targetId, onOutput) {
       target.focus();
       return { ok: false, error: err.toString() };
     }
+  );
+}
+
+// Curated, not full IntelliSense — grounded in what the actual task
+// briefs (SEED_TASKS/SEED_TASKS_KELLY in app.py) reference, not a
+// generic Python/turtle dump.
+const CURATED_COMPLETIONS = [
+  ...["forward", "backward", "right", "left", "penup", "pendown", "goto", "setpos", "speed",
+      "circle", "dot", "color", "pencolor", "fillcolor", "begin_fill", "end_fill", "write",
+      "home", "clear", "onscreenclick", "onkey", "listen",
+      "range", "print", "len", "randint", "choice", "sleep"].map(label => ({ label, type: "function" })),
+  ...["def", "return", "if", "elif", "else", "for", "while", "in",
+      "True", "False", "and", "or", "not", "import"].map(label => ({ label, type: "keyword" })),
+  ...["random", "time"].map(label => ({ label, type: "type" })),
+];
+
+// Matches the app's existing slate/teal palette (see GRID_BG, Panel,
+// and the old textarea's classes below) rather than pulling in a
+// separate CM theme package just for color values already defined here.
+function codeQuestTheme(CM) {
+  return CM.EditorView.theme({
+    "&": { backgroundColor: "#1e293b", color: "#99f6e4", fontSize: "0.75rem", height: "100%" },
+    ".cm-content": { fontFamily: "ui-monospace, monospace", caretColor: "#5eead4" },
+    ".cm-gutters": { backgroundColor: "#1e293b", color: "#64748b", border: "none" },
+    "&.cm-focused": { outline: "none" },
+    ".cm-scroller": { overflow: "auto" },
+  }, { dark: true });
+}
+
+// Wraps a CodeMirror 6 EditorView with the same external contract the
+// old plain <textarea> had (value/onChange), plus onPasteDetected since
+// paste is now audited rather than blocked (see SubmitModal). CM6 loads
+// as real ES modules (window.__cmReady, set up in <head>) — this
+// component just waits for that to resolve before constructing the view.
+function Editor({ value, onChange, onPasteDetected }) {
+  const hostRef = useRef(null);
+  const viewRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.__cmReady.then((CM) => {
+      if (cancelled) return;
+      const completions = CM.completeFromList(CURATED_COMPLETIONS);
+      const view = new CM.EditorView({
+        doc: value,
+        extensions: [
+          CM.lineNumbers(),
+          CM.history(),
+          CM.drawSelection(),
+          CM.closeBrackets(),
+          CM.python(),
+          CM.syntaxHighlighting(CM.defaultHighlightStyle),
+          CM.autocompletion({ override: [completions] }),
+          CM.keymap.of([CM.indentWithTab, ...CM.closeBracketsKeymap, ...CM.completionKeymap, ...CM.defaultKeymap, ...CM.historyKeymap]),
+          CM.placeholder("import turtle\nt = turtle.Turtle()\n..."),
+          CM.EditorView.domEventHandlers({ paste: () => { onPasteDetected(); } }),
+          CM.EditorView.updateListener.of((update) => { if (update.docChanged) onChange(update.state.doc.toString()); }),
+          CM.EditorView.contentAttributes.of({ spellcheck: "false", autocapitalize: "off", autocorrect: "off" }),
+          codeQuestTheme(CM),
+        ],
+        parent: hostRef.current,
+      });
+      viewRef.current = view;
+      setReady(true);
+    });
+    return () => { cancelled = true; viewRef.current?.destroy(); };
+    // eslint-disable-next-line
+  }, []);
+
+  // External resets (loading a saved draft, switching tasks) push into
+  // CM imperatively — CM owns its own internal state after construction,
+  // it doesn't re-read `value` on every render like a controlled input.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && value !== view.state.doc.toString()) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    }
+  }, [value, ready]);
+
+  return (
+    <div>
+      {!ready && <div className="text-xs font-mono text-slate-500 p-3 border border-slate-600 rounded bg-slate-800">Loading editor…</div>}
+      <div ref={hostRef} className={"rounded border border-slate-600 focus-within:border-teal-300 overflow-hidden " + (ready ? "" : "hidden")} />
+    </div>
   );
 }
 
@@ -291,6 +398,10 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
   const [code, setCode] = useState("");
+  // Whether a paste occurred anywhere in this task's editing session —
+  // sticky (only ever set true, never un-set once flagged) until a fresh
+  // startTask, forfeit, or submit resets it. Audited, not blocked.
+  const [pasted, setPasted] = useState(false);
 
   function rerollSlot(index) {
     const shownIds = boxes.map(b => b.task.id);
@@ -310,13 +421,14 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
     const draft = loadDraft(kidId, task.id);
     setExplanation(draft.explanation || "");
     setCode(draft.code || "");
+    setPasted(draft.pasted || false);
     setActiveTask(task);
   }
 
   useEffect(() => {
     if (!activeTask) return;
-    saveDraft(kidId, activeTask.id, { code, explanation });
-  }, [code, explanation, activeTask, kidId]);
+    saveDraft(kidId, activeTask.id, { code, explanation, pasted });
+  }, [code, explanation, pasted, activeTask, kidId]);
 
   if (boxes.length === 0 || !boxes.some(b => b.task)) {
     return <div className="text-slate-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
@@ -371,9 +483,9 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
 
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
-          code={code} setCode={setCode}
-          onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); }}
-          onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot); setActiveTask(null); setExplanation(""); setCode(""); setOpenedIndex(null); }} />
+          code={code} setCode={setCode} onPasteDetected={() => setPasted(true)}
+          onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
+          onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); setOpenedIndex(null); }} />
       )}
     </div>
   );
@@ -452,11 +564,11 @@ function App() {
     }
   }
 
-  async function submitTask(taskId, explanation, code, snapshot) {
+  async function submitTask(taskId, explanation, code, snapshot, pasted) {
     const task = tasks.find(t => t.id === taskId);
     try {
       const created = await apiPost("/submissions", {
-        taskId, title: task.title, points: task.points, explanation, code, snapshot, kidId: selectedKid.id,
+        taskId, title: task.title, points: task.points, explanation, code, snapshot, kidId: selectedKid.id, pasted,
       });
       setSubmissions([...submissions, created]);
     } catch (e) {
@@ -796,14 +908,13 @@ function Section({ label, children }) {
   );
 }
 
-function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit }) {
+function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected }) {
   const [hasRun, setHasRun] = useState(false);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
   const [stopped, setStopped] = useState(false);
   const [entered, setEntered] = useState(false);
-  const codeRef = useRef(null);
   // A ref, not state: handleRun's in-flight async closure needs the live
   // value at the moment runPython's promise settles, not the value from
   // when Run was clicked — state would be stale inside that closure.
@@ -848,22 +959,6 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
     Sk.execLimit = 0;
   }
 
-  function handleCodeKeyDown(e) {
-    if (e.key !== "Tab") return;
-    e.preventDefault();
-    const ta = codeRef.current;
-    const start = ta.selectionStart, end = ta.selectionEnd;
-    if (e.shiftKey) {
-      const lineStart = code.lastIndexOf("\n", start - 1) + 1;
-      const removable = Math.min(4, code.slice(lineStart, start).match(/^ */)[0].length);
-      setCode(code.slice(0, lineStart) + code.slice(lineStart + removable));
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start - removable; });
-    } else {
-      setCode(code.slice(0, start) + "    " + code.slice(end));
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 4; });
-    }
-  }
-
   function handleSubmit() {
     const canvas = document.querySelector("#turtle-target canvas");
     onSubmit(canvas ? canvas.toDataURL("image/png") : null);
@@ -885,17 +980,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="text-sm text-slate-300 mb-2 block">Your code</label>
-              {/* No pasting in — the point is writing it yourself. Blocks
-                  Ctrl+V, right-click paste, and middle-click paste alike,
-                  since they all fire the same paste event. Not real
-                  security (devtools bypass it trivially), just removes the
-                  one-click path. */}
-              <textarea ref={codeRef} value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={handleCodeKeyDown}
-                onPaste={(e) => e.preventDefault()}
-                spellCheck={false} autoCapitalize="off" autoCorrect="off"
-                rows={12} autoFocus
-                placeholder="import turtle&#10;t = turtle.Turtle()&#10;..."
-                className="w-full bg-slate-800 border border-slate-600 rounded p-3 text-xs font-mono text-teal-200 outline-none focus:border-teal-300 resize-none" />
+              <Editor value={code} onChange={setCode} onPasteDetected={onPasteDetected} />
               {running ? (
                 <button onClick={handleStop}
                   className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
@@ -1014,7 +1099,13 @@ function RunnableSubmission({ s, targetPrefix }) {
       )}
       {s.code && s.code.trim() && (
         <>
-          <pre className="text-xs font-mono text-teal-200 bg-slate-950/60 border border-slate-700 rounded p-3 mb-2 overflow-x-auto whitespace-pre-wrap">{s.code}</pre>
+          {s.pasted && (
+            <div className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-400/40 rounded px-2 py-1 mb-2 flex items-center gap-1">
+              <IconAlert size={12} /> Some of this code was pasted in, not typed
+            </div>
+          )}
+          <pre className={"text-xs font-mono text-teal-200 rounded p-3 mb-2 overflow-x-auto whitespace-pre-wrap border " +
+            (s.pasted ? "bg-amber-950/20 border-amber-400/30" : "bg-slate-950/60 border-slate-700")}>{s.code}</pre>
           <button onClick={handleRun} disabled={running}
             className="w-full mb-3 border border-teal-400/40 text-teal-300 disabled:border-slate-700 disabled:text-slate-500 rounded py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-teal-400/10">
             <IconZap size={13} /> {running ? "Running…" : "Run this code"}

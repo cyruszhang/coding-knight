@@ -314,6 +314,11 @@ def init_db():
     # A rendered snapshot of the kid's turtle-canvas output at submit time —
     # genuinely optional (no default makes sense), nullable.
     _ensure_column(db, "submissions", "snapshot", "snapshot TEXT")
+    # Whether a paste occurred anywhere in this submission's editing
+    # session — audited (shown to the parent in Review/History), not
+    # blocked. Existing submissions default to 0 (never flagged
+    # retroactively, since they predate this tracking entirely).
+    _ensure_column(db, "submissions", "pasted", "pasted INTEGER NOT NULL DEFAULT 0")
     # Per-kid PIN gating the kid's own view, distinct from the parent PIN —
     # both existing kids get a shared default, changeable per-kid afterward.
     _ensure_column(db, "kids", "pin", "pin TEXT NOT NULL DEFAULT '0000'")
@@ -528,10 +533,11 @@ def create_submission():
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     db = get_db()
     db.execute(
-        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id, snapshot)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+        """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id, snapshot, pasted)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
         (sub_id, data["taskId"], data["title"], int(data["points"]),
-         data.get("explanation", ""), data.get("code", ""), now, data["kidId"], data.get("snapshot")),
+         data.get("explanation", ""), data.get("code", ""), now, data["kidId"], data.get("snapshot"),
+         1 if data.get("pasted") else 0),
     )
     dbmod.commit_and_sync(db)
     row = dbmod.fetchone(db.execute("SELECT * FROM submissions WHERE id=?", (sub_id,)))
