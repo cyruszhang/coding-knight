@@ -152,12 +152,17 @@ const CURATED_COMPLETIONS = [
 // and the old textarea's classes below) rather than pulling in a
 // separate CM theme package just for color values already defined here.
 function codeQuestTheme(CM) {
+  // CM6 sizes to its content by default (unlike the old textarea's fixed
+  // rows={12}) -- with one short line typed, it was collapsing down to
+  // just that line. minHeight on both & and .cm-scroller keeps it a
+  // proper, prominent editing area regardless of content; maxHeight +
+  // scroll stops a very long program from growing the page unbounded.
   return CM.EditorView.theme({
-    "&": { backgroundColor: "#1e293b", color: "#99f6e4", fontSize: "0.75rem", height: "100%" },
+    "&": { backgroundColor: "#1e293b", color: "#99f6e4", fontSize: "0.8rem", minHeight: "320px", maxHeight: "520px" },
     ".cm-content": { fontFamily: "ui-monospace, monospace", caretColor: "#5eead4" },
     ".cm-gutters": { backgroundColor: "#1e293b", color: "#64748b", border: "none" },
     "&.cm-focused": { outline: "none" },
-    ".cm-scroller": { overflow: "auto" },
+    ".cm-scroller": { overflow: "auto", minHeight: "320px", maxHeight: "520px" },
   }, { dark: true });
 }
 
@@ -977,34 +982,38 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             <div className="text-sm text-slate-400">{task.brief}</div>
           </Panel>
 
+          <div className="mb-4">
+            <label className="text-sm text-slate-300 mb-2 block">Your code</label>
+            <Editor value={code} onChange={setCode} onPasteDetected={onPasteDetected} />
+            {running ? (
+              <button onClick={handleStop}
+                className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                ■ Stop
+              </button>
+            ) : (
+              <button onClick={handleRun}
+                className="mt-2 w-full bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                <IconZap size={14} /> Run
+              </button>
+            )}
+          </div>
+
           <div className="grid sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="text-sm text-slate-300 mb-2 block">Your code</label>
-              <Editor value={code} onChange={setCode} onPasteDetected={onPasteDetected} />
-              {running ? (
-                <button onClick={handleStop}
-                  className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
-                  ■ Stop
-                </button>
-              ) : (
-                <button onClick={handleRun}
-                  className="mt-2 w-full bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
-                  <IconZap size={14} /> Run
-                </button>
-              )}
-              <label className="text-sm text-slate-300 mt-3 mb-2 block">Output</label>
-              <pre className={"text-xs font-mono rounded p-2 max-h-40 overflow-y-auto whitespace-pre-wrap border " +
-                (stopped ? "text-amber-300 bg-amber-500/10 border-amber-400/40"
-                 : runError ? "text-red-300 bg-red-500/10 border-red-400/40"
-                 : "text-slate-300 bg-slate-950/60 border-slate-700")}>
-                {stopped ? "Stopped." : runError ? ("Your code hit a snag: " + runError) : (output || "Nothing printed yet — click Run.")}
-              </pre>
-            </div>
             <div>
               <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
               <div id="turtle-target" tabIndex={0}
                 className="w-full bg-white rounded border border-slate-600 outline-none"
                 style={{ minHeight: 220 }} />
+            </div>
+            <div>
+              <label className="text-sm text-slate-300 mb-2 block">Output</label>
+              <pre className={"text-xs font-mono rounded p-2 overflow-y-auto whitespace-pre-wrap border " +
+                (stopped ? "text-amber-300 bg-amber-500/10 border-amber-400/40"
+                 : runError ? "text-red-300 bg-red-500/10 border-red-400/40"
+                 : "text-slate-300 bg-slate-950/60 border-slate-700")}
+                style={{ minHeight: 220 }}>
+                {stopped ? "Stopped." : runError ? ("Your code hit a snag: " + runError) : (output || "Nothing printed yet — click Run.")}
+              </pre>
             </div>
           </div>
 
