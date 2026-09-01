@@ -244,6 +244,7 @@ function Editor({ value, onChange, onPasteDetected }) {
       if (cancelled) return;
       const view = new CM.EditorView({
         doc: value,
+        selection: { anchor: value.length },
         extensions: [
           CM.lineNumbers(),
           CM.history(),
@@ -260,7 +261,7 @@ function Editor({ value, onChange, onPasteDetected }) {
           // explicit entry ahead of indentWithTab, Tab always indents,
           // even with a completion popup open.
           CM.keymap.of([{ key: "Tab", run: CM.acceptCompletion }, CM.indentWithTab, ...CM.closeBracketsKeymap, ...CM.completionKeymap, ...CM.defaultKeymap, ...CM.historyKeymap]),
-          CM.placeholder("import turtle\nt = turtle.Turtle()\n..."),
+          CM.placeholder("import turtle\npen = turtle.Turtle()\n..."),
           CM.EditorView.domEventHandlers({ paste: () => { onPasteDetected(); } }),
           CM.EditorView.updateListener.of((update) => { if (update.docChanged) onChange(update.state.doc.toString()); }),
           CM.EditorView.contentAttributes.of({ spellcheck: "false", autocapitalize: "off", autocorrect: "off" }),
@@ -270,6 +271,7 @@ function Editor({ value, onChange, onPasteDetected }) {
       });
       viewRef.current = view;
       setReady(true);
+      view.focus(); // ready to keep typing immediately, no click needed first
     });
     return () => { cancelled = true; viewRef.current?.destroy(); };
     // eslint-disable-next-line
@@ -318,6 +320,10 @@ function readImageAsResizedDataUrl(file, maxSize = 200) {
     reader.readAsDataURL(file);
   });
 }
+
+// Matches how the family actually writes turtle code already (seen in
+// real submissions), not just how the seed task briefs describe it.
+const DEFAULT_CODE = "import turtle\npen = turtle.Turtle()\n";
 
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
 
@@ -493,7 +499,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);
     setExplanation(draft.explanation || "");
-    setCode(draft.code || "");
+    setCode(draft.code || DEFAULT_CODE);
     setPasted(draft.pasted || false);
     setActiveTask(task);
   }
