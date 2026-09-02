@@ -534,6 +534,13 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   // sticky (only ever set true, never un-set once flagged) until a fresh
   // startTask, forfeit, or submit resets it. Audited, not blocked.
   const [pasted, setPasted] = useState(false);
+  // Task ids the kid has actively rerolled away this session. Exposure
+  // counts don't change from a reroll (only a real submission moves
+  // them), so without this the skill-gap shortlist stays identical
+  // between rerolls and "Put It Back" just cycles the same handful of
+  // tied-for-least-practiced tasks back into view. Excluding declined
+  // ids forces genuinely new content until the whole pool's been seen.
+  const [declinedIds, setDeclinedIds] = useState([]);
 
   // Among the active task's own tagged skills, the one the kid has the
   // least submission history for -- ties the tip to the code they're
@@ -547,10 +554,21 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   }, [activeTask, kidTasks, kidSubmissions]);
 
   function rerollSlot(index) {
+    const declinedTask = boxes[index].task;
     const shownIds = boxes.map(b => b.task.id);
     const counts = skillExposureCounts(kidTasks, kidSubmissions);
     const level = currentDifficultyLevel(kidTasks, kidSubmissions);
-    const replacement = pickOneForTier(boxes[index].tier, available, counts, level, shownIds);
+    const fullExclude = [...new Set([...shownIds, ...declinedIds, declinedTask.id])];
+    let replacement = pickOneForTier(boxes[index].tier, available, counts, level, fullExclude);
+    let nextDeclined = [...declinedIds, declinedTask.id];
+    if (!replacement) {
+      // Every eligible task has already been declined this session --
+      // let them back into circulation rather than getting stuck
+      // reshowing the exact box the kid just put back.
+      replacement = pickOneForTier(boxes[index].tier, available, counts, level, shownIds);
+      nextDeclined = [];
+    }
+    setDeclinedIds(nextDeclined);
     setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task, tier: b.tier } : b)));
     setVariants(prev => {
       const usedElsewhere = prev.filter((_, i) => i !== index);
