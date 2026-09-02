@@ -16,6 +16,7 @@ SKILLS = [
     ("functions", "Functions", 2),
     ("recursion", "Recursion", 3),
     ("event_handling", "Keyboard/event interactivity", 3),
+    ("dynamic_programming", "Dynamic programming / memoization", 3),
 ]
 
 KID_MAX_TIER = {"shayne": 3, "kelly": 1}

@@ -100,27 +100,12 @@ function skulptBuiltinRead(x) {
   return Sk.builtinFiles["files"][x];
 }
 
-// Registers the text-adventure engine (static/adventure_engine.py) as a
-// real importable Skulpt module -- same mechanism skulpt-stdlib.js uses
-// for the actual Python stdlib -- so a task's code can do a genuine
-// `import adventure as world` and keep its own line numbers in any
-// traceback, rather than the engine being invisibly prepended JS-side.
-// Fetched once (a few KB, no lazy-loading complexity needed the way the
-// 12MB Pyodide worker required) and awaited at the top of every run.
-const adventureEngineReady = fetch("/adventure_engine.py")
-  .then((r) => r.text())
-  .then((src) => {
-    Sk.builtinFiles = Sk.builtinFiles || { files: {} };
-    Sk.builtinFiles.files["src/lib/adventure/__init__.py"] = src;
-  });
-
 // Runs `code` with turtle output drawn into the element with id `targetId`.
 // Clears any previous drawing first (Skulpt stacks a new canvas into the
 // target on every run otherwise) and focuses the target afterward so
 // keyboard-driven turtle programs (onkey) work without an extra click —
 // same as a real turtle/tkinter window needing focus.
 async function runPython(code, targetId, onOutput) {
-  await adventureEngineReady;
   const target = document.getElementById(targetId);
   target.innerHTML = "";
   Sk.configure({
@@ -182,6 +167,52 @@ function captureCanvasSnapshot(targetId) {
   const ctx = out.getContext("2d");
   ordered.forEach(c => ctx.drawImage(c, 0, 0));
   return out.toDataURL("image/png");
+}
+
+// Runs `code` once per test case against a scripted input() feed (no
+// live prompt UI -- Sk.configure's inputfun just hands input() the
+// next canned value) and diffs the captured print() output against
+// each case's expected string. Separate from runPython: judge tasks
+// need multiple short runs with different inputs and a fully-captured
+// result per run, not one long stream to a live canvas -- there's no
+// canvas at all here, Sk.TurtleGraphics is never touched.
+// Each test case runs independently (one crashing doesn't stop the
+// rest) so a kid gets real per-case diagnostic signal, not just one
+// pass/fail for the whole submission.
+async function runJudgeTestCases(code, testCases) {
+  const results = [];
+  for (const tc of testCases) {
+    let out = "";
+    let idx = 0;
+    try {
+      Sk.configure({
+        output: (text) => { out += text; },
+        read: skulptBuiltinRead,
+        __future__: Sk.python3,
+        inputfun: () => tc.input[idx++],
+        inputfunTakesPrompt: true,
+        // Short on purpose -- judge tasks are small, fast problems, not
+        // turtle's real-time animation. (A Skulpt platform quirk found
+        // while building this vehicle also means graded test cases must
+        // stay well clear of heavy naive-recursion call counts: past
+        // roughly a few hundred thousand calls Skulpt doesn't cleanly
+        // time out, it silently returns no output at all -- so this
+        // execLimit is a backstop for a true infinite loop, not the
+        // primary safety net for a slow-but-finite solution.)
+        execLimit: 5000,
+        yieldLimit: 200,
+      });
+      await Sk.misceval.asyncToPromise(() =>
+        Sk.importMainWithBody("<stdin>", false, code, true));
+      const actual = out.trim();
+      const expected = tc.expected.trim();
+      results.push({ input: tc.input, expected, actual, passed: actual === expected });
+    } catch (err) {
+      results.push({ input: tc.input, expected: tc.expected.trim(), actual: null,
+                      error: err.toString(), passed: false });
+    }
+  }
+  return results;
 }
 
 // Real completions via Pyodide + Jedi running in completion-worker.js (a
@@ -350,17 +381,7 @@ function readImageAsResizedDataUrl(file, maxSize = 200) {
 // Matches how the family actually writes turtle code already (seen in
 // real submissions), not just how the seed task briefs describe it.
 const DEFAULT_CODE_TURTLE = "import turtle\npen = turtle.Turtle()\n";
-const DEFAULT_CODE_ADVENTURE = [
-  "import adventure as world",
-  "",
-  "# Example (delete this and write your own rooms):",
-  '# world.room("cave", "A dusty cave.", exits={"north": "tunnel"})',
-  '# world.room("tunnel", "A dark tunnel.", exits={"south": "cave"}, items=["torch"])',
-  '# world.start_at("cave")   # pass the room\'s exact name, in quotes',
-  '# world.go("north")',
-  '# world.take("torch")',
-  "",
-].join("\n");
+const DEFAULT_CODE_JUDGE = "# Read input with input(), print your answer with print().\n";
 
 // One hand-picked tip per skill in curriculum.py's SKILLS taxonomy.
 // Surfaced opt-in per task by picking whichever of that task's tagged
@@ -412,6 +433,11 @@ const LIBRARY_TIPS = {
     title: "Listening for keys",
     tip: "onkey() connects a key to a function, but you also need listen() so the window is actually paying attention.",
     code: 't.onkey(lambda: t.forward(10), "Up")\nt.listen()',
+  },
+  dynamic_programming: {
+    title: "Remember what you've already solved",
+    tip: "If a recursive function gets called with the same input more than once, save the answer in a dictionary the first time so you can just look it up next time instead of recomputing it.",
+    code: "cache = {}\ndef solve(n):\n    if n in cache:\n        return cache[n]\n    cache[n] = ...\n    return cache[n]",
   },
 };
 
@@ -618,7 +644,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);
     setExplanation(draft.explanation || "");
-    setCode(draft.code || (task.vehicle === "adventure" ? DEFAULT_CODE_ADVENTURE : DEFAULT_CODE_TURTLE));
+    setCode(draft.code || (task.vehicle === "judge" ? DEFAULT_CODE_JUDGE : DEFAULT_CODE_TURTLE));
     setPasted(draft.pasted || false);
     setActiveTask(task);
   }
@@ -1147,6 +1173,7 @@ function Section({ label, children }) {
 }
 
 function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected, tip }) {
+  const isJudge = task.vehicle === "judge";
   const [hasRun, setHasRun] = useState(false);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
@@ -1154,11 +1181,18 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   const [stopped, setStopped] = useState(false);
   const [entered, setEntered] = useState(false);
   const [showTip, setShowTip] = useState(false);
+  const [testResults, setTestResults] = useState([]);
   // A ref, not state: handleRun's in-flight async closure needs the live
   // value at the moment runPython's promise settles, not the value from
   // when Run was clicked — state would be stale inside that closure.
   const stoppedRef = useRef(false);
-  const canSubmit = explanation.trim().length >= 10 && hasRun;
+  const allTestsPassed = testResults.length > 0 && testResults.every(r => r.passed);
+  // Judge tasks gate Submit on every test case actually passing (the
+  // whole point of automated grading) rather than just "ran once" --
+  // turtle tasks keep the original looser gate.
+  const canSubmit = isJudge
+    ? explanation.trim().length >= 10 && allTestsPassed
+    : explanation.trim().length >= 10 && hasRun;
 
   // Slide in from the right on mount rather than popping up as a dialog —
   // this is a detail page, not a modal, so it gets the same full-screen
@@ -1173,6 +1207,19 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
     setRunError(null);
     setStopped(false);
     stoppedRef.current = false;
+    if (isJudge) {
+      setTestResults([]);
+      try {
+        const results = await runJudgeTestCases(code, task.testCases || []);
+        setTestResults(results);
+      } catch (e) {
+        setRunError(e.message || String(e));
+      } finally {
+        setHasRun(true);
+        setRunning(false);
+      }
+      return;
+    }
     let out = "";
     setOutput("");
     try {
@@ -1234,10 +1281,17 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             )}
             <Editor value={code} onChange={setCode} onPasteDetected={onPasteDetected} />
             {running ? (
-              <button onClick={handleStop}
-                className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
-                ■ Stop
-              </button>
+              isJudge ? (
+                <button disabled
+                  className="mt-2 w-full bg-slate-700 text-slate-400 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                  Running tests...
+                </button>
+              ) : (
+                <button onClick={handleStop}
+                  className="mt-2 w-full bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
+                  ■ Stop
+                </button>
+              )
             ) : (
               <button onClick={handleRun}
                 className="mt-2 w-full bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
@@ -1246,33 +1300,65 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             )}
           </div>
 
-          <div className="mb-4">
-            <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
-            <div id="turtle-target" tabIndex={0}
-              className="w-full bg-white rounded border border-slate-600 outline-none"
-              style={{ minHeight: 420 }} />
-          </div>
+          {!isJudge && (
+            <div className="mb-4">
+              <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
+              <div id="turtle-target" tabIndex={0}
+                className="w-full bg-white rounded border border-slate-600 outline-none"
+                style={{ minHeight: 420 }} />
+            </div>
+          )}
 
-          <div className="mb-4">
-            <label className="text-sm text-slate-300 mb-2 block">Output</label>
-            <div className={"font-mono text-xs rounded border overflow-y-auto " +
-              (stopped ? "bg-amber-500/10 border-amber-400/40"
-               : runError ? "bg-red-500/10 border-red-400/40"
-               : "bg-slate-950/60 border-slate-700")}
-              style={{ minHeight: 140, maxHeight: 260 }}>
-              {stopped ? (
-                <div className="px-3 py-1.5 text-amber-300">Stopped.</div>
-              ) : runError ? (
-                <div className="px-3 py-1.5 text-red-300">Your code hit a snag: {runError}</div>
-              ) : output ? (
-                output.split("\n").map((line, i) => (
-                  <div key={i} className="px-3 py-1.5 text-slate-300 border-b border-slate-800/60 last:border-0 whitespace-pre-wrap">{line}</div>
-                ))
+          {isJudge ? (
+            <div className="mb-4">
+              <label className="text-sm text-slate-300 mb-2 block">Test Results</label>
+              {testResults.length === 0 ? (
+                <div className="font-mono text-xs rounded border border-slate-700 bg-slate-950/60 px-3 py-2 text-slate-500 italic">
+                  No results yet — click Run.
+                </div>
               ) : (
-                <div className="px-3 py-1.5 text-slate-500 italic">Nothing printed yet — click Run.</div>
+                <div className="space-y-2">
+                  {testResults.map((r, i) => (
+                    <div key={i} className={"font-mono text-xs rounded border px-3 py-2 " +
+                      (r.passed ? "bg-teal-500/10 border-teal-400/40" : "bg-red-500/10 border-red-400/40")}>
+                      <div className={r.passed ? "text-teal-300" : "text-red-300"}>
+                        {r.passed ? "✓" : "✗"} Test {i + 1} — input: {r.input.length ? r.input.join(", ") : "(none)"}
+                      </div>
+                      {r.passed ? (
+                        <div className="text-slate-400 mt-1">output: {r.actual}</div>
+                      ) : (
+                        <>
+                          <div className="text-slate-400 mt-1">expected: {r.expected}</div>
+                          <div className="text-slate-400">got: {r.error ? r.error : (r.actual || "(nothing printed)")}</div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
+          ) : (
+            <div className="mb-4">
+              <label className="text-sm text-slate-300 mb-2 block">Output</label>
+              <div className={"font-mono text-xs rounded border overflow-y-auto " +
+                (stopped ? "bg-amber-500/10 border-amber-400/40"
+                 : runError ? "bg-red-500/10 border-red-400/40"
+                 : "bg-slate-950/60 border-slate-700")}
+                style={{ minHeight: 140, maxHeight: 260 }}>
+                {stopped ? (
+                  <div className="px-3 py-1.5 text-amber-300">Stopped.</div>
+                ) : runError ? (
+                  <div className="px-3 py-1.5 text-red-300">Your code hit a snag: {runError}</div>
+                ) : output ? (
+                  output.split("\n").map((line, i) => (
+                    <div key={i} className="px-3 py-1.5 text-slate-300 border-b border-slate-800/60 last:border-0 whitespace-pre-wrap">{line}</div>
+                  ))
+                ) : (
+                  <div className="px-3 py-1.5 text-slate-500 italic">Nothing printed yet — click Run.</div>
+                )}
+              </div>
+            </div>
+          )}
 
           <Panel>
             <label className="text-sm text-slate-300 mb-2 block">In your own words — what does your code do?</label>
@@ -1284,8 +1370,16 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
               className="w-full bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 font-semibold rounded py-2 text-sm flex items-center justify-center gap-1">
               <IconSend size={14} /> Submit
             </button>
-            {!hasRun && (
-              <div className="text-xs text-slate-500 font-mono mt-2 text-center">Run your code at least once before submitting.</div>
+            {isJudge ? (
+              !allTestsPassed && (
+                <div className="text-xs text-slate-500 font-mono mt-2 text-center">
+                  {testResults.length === 0 ? "Run your code to check it against the test cases." : "All test cases must pass before submitting."}
+                </div>
+              )
+            ) : (
+              !hasRun && (
+                <div className="text-xs text-slate-500 font-mono mt-2 text-center">Run your code at least once before submitting.</div>
+              )
             )}
           </Panel>
         </div>
