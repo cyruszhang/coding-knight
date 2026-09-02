@@ -120,7 +120,18 @@ function runPython(code, targetId, onOutput) {
     execLimit: 30000,
     yieldLimit: 200,
   });
-  (Sk.TurtleGraphics || (Sk.TurtleGraphics = {})).target = targetId;
+  // Skulpt defaults TurtleGraphics to a fixed 400x400 canvas regardless
+  // of the target div's actual size -- on this layout (a responsive,
+  // wider-than-400 "Your drawing" box) that left a dead zone of plain
+  // white div background past x=400 that LOOKS like canvas but isn't;
+  // turtle motion past that edge just clips instead of drawing there.
+  // Reading the live box size (innerHTML was just cleared above, so
+  // this reflects pure CSS sizing, not a leftover canvas) makes the
+  // canvas fill exactly what the kid can see, on any viewport.
+  const tg = (Sk.TurtleGraphics || (Sk.TurtleGraphics = {}));
+  tg.target = targetId;
+  tg.width = target.clientWidth;
+  tg.height = target.clientHeight;
   return Sk.misceval.asyncToPromise(function () {
     return Sk.importMainWithBody("<stdin>", false, code, true);
   }).then(
@@ -1213,7 +1224,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             <label className="text-sm text-slate-300 mb-2 block">Your drawing</label>
             <div id="turtle-target" tabIndex={0}
               className="w-full bg-white rounded border border-slate-600 outline-none"
-              style={{ minHeight: 260 }} />
+              style={{ minHeight: 420 }} />
           </div>
 
           <div className="mb-4">
