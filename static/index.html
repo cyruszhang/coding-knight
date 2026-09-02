@@ -46,7 +46,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
 // ---------- storage: talks to the Flask+SQLite backend over the API ----------
 const API = "/api";
@@ -325,6 +325,59 @@ function readImageAsResizedDataUrl(file, maxSize = 200) {
 // real submissions), not just how the seed task briefs describe it.
 const DEFAULT_CODE = "import turtle\npen = turtle.Turtle()\n";
 
+// One hand-picked tip per skill in curriculum.py's SKILLS taxonomy.
+// Surfaced opt-in per task by picking whichever of that task's tagged
+// skills the kid has the least submission history for (see
+// MysteryBoxPicker's activeTip) -- not an LLM, the curriculum is small
+// and fixed so a lookup table covers it completely.
+const LIBRARY_TIPS = {
+  shapes: {
+    title: "Filling shapes",
+    tip: "Want a solid color instead of just an outline? Wrap your shape between begin_fill() and end_fill().",
+    code: "t.begin_fill()\nt.circle(50)\nt.end_fill()",
+  },
+  colors: {
+    title: "Two-color pen",
+    tip: "color() can take two colors at once — the first is the outline, the second is the fill.",
+    code: 't.color("blue", "yellow")',
+  },
+  loops_basic: {
+    title: "range() has 3 settings",
+    tip: "range(start, stop, step) lets you count by more than 1 at a time, or count backwards with a negative step.",
+    code: "for i in range(0, 10, 2):\n    t.forward(i)",
+  },
+  nested_loops: {
+    title: "A loop inside a loop",
+    tip: "Put one for loop inside another to repeat a whole shape in a grid or ring pattern.",
+    code: "for row in range(3):\n    for col in range(3):\n        t.forward(20)\n    t.right(90)",
+  },
+  conditionals: {
+    title: "Alternate with %",
+    tip: "i % 2 == 0 is True on every other number — handy for alternating colors or turns inside a loop.",
+    code: 'if i % 2 == 0:\n    t.color("red")\nelse:\n    t.color("blue")',
+  },
+  randomness: {
+    title: "choice() vs randint()",
+    tip: "random.choice(list) picks one item from a list of options; random.randint(a, b) picks a whole number between a and b.",
+    code: 'color = random.choice(["red", "green", "blue"])\nsize = random.randint(20, 80)',
+  },
+  functions: {
+    title: "Give repeated code a name",
+    tip: "If you copy-paste the same lines more than once, turn them into a function with def so you can just call it by name.",
+    code: "def draw_square(size):\n    for i in range(4):\n        t.forward(size)\n        t.right(90)",
+  },
+  recursion: {
+    title: "A function that calls itself",
+    tip: "A recursive function calls itself with a smaller input each time, and stops once that input hits a base case.",
+    code: "def branch(length):\n    if length < 5:\n        return\n    t.forward(length)\n    branch(length * 0.7)",
+  },
+  event_handling: {
+    title: "Listening for keys",
+    tip: "onkey() connects a key to a function, but you also need listen() so the window is actually paying attention.",
+    code: 't.onkey(lambda: t.forward(10), "Up")\nt.listen()',
+  },
+};
+
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
 
 const GRID_BG = {
@@ -482,6 +535,17 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   // startTask, forfeit, or submit resets it. Audited, not blocked.
   const [pasted, setPasted] = useState(false);
 
+  // Among the active task's own tagged skills, the one the kid has the
+  // least submission history for -- ties the tip to the code they're
+  // actually about to write, not a generic "weakest skill overall".
+  const activeTip = useMemo(() => {
+    if (!activeTask || !activeTask.skills || !activeTask.skills.length) return null;
+    const counts = skillExposureCounts(kidTasks, kidSubmissions);
+    const weakest = activeTask.skills.reduce((min, sk) =>
+      (counts[sk] || 0) < (counts[min] || 0) ? sk : min);
+    return LIBRARY_TIPS[weakest] || null;
+  }, [activeTask, kidTasks, kidSubmissions]);
+
   function rerollSlot(index) {
     const shownIds = boxes.map(b => b.task.id);
     const counts = skillExposureCounts(kidTasks, kidSubmissions);
@@ -562,7 +626,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
 
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
-          code={code} setCode={setCode} onPasteDetected={() => setPasted(true)}
+          code={code} setCode={setCode} onPasteDetected={() => setPasted(true)} tip={activeTip}
           onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
           onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); setOpenedIndex(null); }} />
       )}
@@ -1027,13 +1091,14 @@ function Section({ label, children }) {
   );
 }
 
-function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected }) {
+function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected, tip }) {
   const [hasRun, setHasRun] = useState(false);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
   const [stopped, setStopped] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [showTip, setShowTip] = useState(false);
   // A ref, not state: handleRun's in-flight async closure needs the live
   // value at the moment runPython's promise settles, not the value from
   // when Run was clicked — state would be stale inside that closure.
@@ -1096,7 +1161,22 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
           </Panel>
 
           <div className="mb-4">
-            <label className="text-sm text-slate-300 mb-2 block">Your code</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm text-slate-300">Your code</label>
+              {tip && (
+                <button onClick={() => setShowTip(v => !v)}
+                  className="text-xs font-mono text-amber-300 hover:text-amber-200 flex items-center gap-1">
+                  💡 {showTip ? "Hide tip" : "Tip"}
+                </button>
+              )}
+            </div>
+            {tip && showTip && (
+              <div className="mb-2 rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                <div className="font-semibold mb-1">{tip.title}</div>
+                <div className="mb-2">{tip.tip}</div>
+                <pre className="font-mono text-amber-200 whitespace-pre-wrap">{tip.code}</pre>
+              </div>
+            )}
             <Editor value={code} onChange={setCode} onPasteDetected={onPasteDetected} />
             {running ? (
               <button onClick={handleStop}
