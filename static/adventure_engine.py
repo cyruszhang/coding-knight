@@ -27,6 +27,10 @@ def room(name, desc, exits=None, items=None):
 
 def start_at(name):
     global _pos, _pen, _avatar
+    if name not in _rooms:
+        print("There's no room called " + repr(name) + ". "
+              "Pass the exact name you gave it in world.room(...), as text in quotes.")
+        return
     _pos = name
     _visited.add(name)
     _pen = turtle.Turtle()
@@ -55,7 +59,12 @@ def go(direction):
     if direction not in exits:
         print("You can't go that way.")
         return
-    _pos = exits[direction]
+    target = exits[direction]
+    if target not in _rooms:
+        print("The exit " + repr(direction) + " points to " + repr(target) +
+              ", but you never declared that room with world.room(...).")
+        return
+    _pos = target
     _visited.add(_pos)
     _redraw()
     print("You went " + direction + " to " + _pos + ".")
@@ -80,6 +89,9 @@ def inventory():
 def neighbors(name):
     """Room names directly reachable from `name` -- for writing your
     own search over the map (e.g. a recursive maze solver)."""
+    if name not in _rooms:
+        print("There's no room called " + repr(name) + " -- treating it as a dead end.")
+        return []
     return list(_rooms[name]["exits"].values())
 
 
@@ -91,8 +103,12 @@ def _compute_positions():
         nxt = []
         for r in frontier:
             gx, gy = _positions[r]
+            # An exit can point to a room name that was never declared
+            # with world.room(...) -- skip it here (go() prints a
+            # friendly message if the kid actually tries to walk there)
+            # rather than crashing the whole layout pass on a typo.
             for d, target in _rooms[r]["exits"].items():
-                if target in _positions or d not in _DIRS:
+                if target in _positions or d not in _DIRS or target not in _rooms:
                     continue
                 dx, dy = _DIRS[d]
                 _positions[target] = (gx + dx, gy + dy)

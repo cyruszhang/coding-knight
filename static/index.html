@@ -350,7 +350,17 @@ function readImageAsResizedDataUrl(file, maxSize = 200) {
 // Matches how the family actually writes turtle code already (seen in
 // real submissions), not just how the seed task briefs describe it.
 const DEFAULT_CODE_TURTLE = "import turtle\npen = turtle.Turtle()\n";
-const DEFAULT_CODE_ADVENTURE = "import adventure as world\n";
+const DEFAULT_CODE_ADVENTURE = [
+  "import adventure as world",
+  "",
+  "# Example (delete this and write your own rooms):",
+  '# world.room("cave", "A dusty cave.", exits={"north": "tunnel"})',
+  '# world.room("tunnel", "A dark tunnel.", exits={"south": "cave"}, items=["torch"])',
+  '# world.start_at("cave")   # pass the room\'s exact name, in quotes',
+  '# world.go("north")',
+  '# world.take("torch")',
+  "",
+].join("\n");
 
 // One hand-picked tip per skill in curriculum.py's SKILLS taxonomy.
 // Surfaced opt-in per task by picking whichever of that task's tagged
