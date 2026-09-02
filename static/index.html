@@ -100,12 +100,27 @@ function skulptBuiltinRead(x) {
   return Sk.builtinFiles["files"][x];
 }
 
+// Registers the text-adventure engine (static/adventure_engine.py) as a
+// real importable Skulpt module -- same mechanism skulpt-stdlib.js uses
+// for the actual Python stdlib -- so a task's code can do a genuine
+// `import adventure as world` and keep its own line numbers in any
+// traceback, rather than the engine being invisibly prepended JS-side.
+// Fetched once (a few KB, no lazy-loading complexity needed the way the
+// 12MB Pyodide worker required) and awaited at the top of every run.
+const adventureEngineReady = fetch("/adventure_engine.py")
+  .then((r) => r.text())
+  .then((src) => {
+    Sk.builtinFiles = Sk.builtinFiles || { files: {} };
+    Sk.builtinFiles.files["src/lib/adventure/__init__.py"] = src;
+  });
+
 // Runs `code` with turtle output drawn into the element with id `targetId`.
 // Clears any previous drawing first (Skulpt stacks a new canvas into the
 // target on every run otherwise) and focuses the target afterward so
 // keyboard-driven turtle programs (onkey) work without an extra click —
 // same as a real turtle/tkinter window needing focus.
-function runPython(code, targetId, onOutput) {
+async function runPython(code, targetId, onOutput) {
+  await adventureEngineReady;
   const target = document.getElementById(targetId);
   target.innerHTML = "";
   Sk.configure({
@@ -334,7 +349,8 @@ function readImageAsResizedDataUrl(file, maxSize = 200) {
 
 // Matches how the family actually writes turtle code already (seen in
 // real submissions), not just how the seed task briefs describe it.
-const DEFAULT_CODE = "import turtle\npen = turtle.Turtle()\n";
+const DEFAULT_CODE_TURTLE = "import turtle\npen = turtle.Turtle()\n";
+const DEFAULT_CODE_ADVENTURE = "import adventure as world\n";
 
 // One hand-picked tip per skill in curriculum.py's SKILLS taxonomy.
 // Surfaced opt-in per task by picking whichever of that task's tagged
@@ -592,7 +608,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);
     setExplanation(draft.explanation || "");
-    setCode(draft.code || DEFAULT_CODE);
+    setCode(draft.code || (task.vehicle === "adventure" ? DEFAULT_CODE_ADVENTURE : DEFAULT_CODE_TURTLE));
     setPasted(draft.pasted || false);
     setActiveTask(task);
   }

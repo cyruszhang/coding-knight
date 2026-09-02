@@ -87,7 +87,7 @@ def fetchall(cursor):
 def row_to_task(row):
     return {"id": row["id"], "title": row["title"], "points": row["points"],
             "difficulty": row["difficulty"], "brief": row["brief"], "kidId": row["kid_id"],
-            "source": row["source"], "status": row["status"],
+            "source": row["source"], "status": row["status"], "vehicle": row["vehicle"],
             "skills": json.loads(row["skills"]) if row["skills"] else []}
 
 
