@@ -444,6 +444,11 @@ const LIBRARY_TIPS = {
     tip: "A variable is just a name you give a value so you can use it again later — x = 5 stores 5 under the name x.",
     code: "x = 5\nprint(x + 1)",
   },
+  type_casting: {
+    title: "input() always gives you text",
+    tip: "Even if someone types a number, input() hands it to you as text (a string) — wrap it in int(...) before you can do math with it, or you'll get a str/int error.",
+    code: 'age_text = input()\nage = int(age_text)\nprint(age + 1)',
+  },
   parameters: {
     title: "Passing values into a function",
     tip: "A parameter is a name a function fills in from whatever you pass it when you call it — the function body doesn't know the value until it's called.",
@@ -737,10 +742,15 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   );
 }
 
-// Fixed pedagogical order for the fundamentals set (simplest concept
-// first) -- any future fundamentals task not in this list still shows
-// up, just appended after the ones we do recognize.
-const FUNDAMENTALS_ORDER = ["fund_variables", "fund_loops", "fund_lists", "fund_functions", "fund_parameters"];
+// Fixed pedagogical order for the fundamentals set (simplest concept,
+// and anything a later concept silently depends on, first -- e.g.
+// type_casting right after variables, since every other numeric-input
+// task quietly assumes int(input()) is already understood). Real task
+// ids carry a per-kid suffix (e.g. "fund_variables_shayne"), so this
+// matches by prefix, not exact id -- any future fundamentals task not
+// in this list still shows up, just appended after the ones we do
+// recognize.
+const FUNDAMENTALS_ORDER = ["fund_variables", "fund_typecast", "fund_loops", "fund_lists", "fund_functions", "fund_parameters"];
 
 // Deliberately simpler than MysteryBoxPicker: a fixed small pool (not
 // a large rotating one) needs no boxes, reroll, or skill-gap scoring --
@@ -753,10 +763,11 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
   const [code, setCode] = useState("");
   const [pasted, setPasted] = useState(false);
 
+  const isRecognized = t => FUNDAMENTALS_ORDER.some(id => t.id.startsWith(id + "_"));
   const ordered = FUNDAMENTALS_ORDER
-    .map(id => tasks.find(t => t.id === id))
+    .map(id => tasks.find(t => t.id.startsWith(id + "_")))
     .filter(Boolean)
-    .concat(tasks.filter(t => !FUNDAMENTALS_ORDER.includes(t.id)));
+    .concat(tasks.filter(t => !isRecognized(t)));
 
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);

@@ -8,6 +8,7 @@ over time without migrating them to a different skill set.
 
 SKILLS = [
     ("variables", "Variables", 1),
+    ("type_casting", "Text vs. numbers (type conversion)", 1),
     ("shapes", "Basic shapes", 1),
     ("colors", "Color control", 1),
     ("loops_basic", "Single loops", 1),
