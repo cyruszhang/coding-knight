@@ -439,6 +439,21 @@ const LIBRARY_TIPS = {
     tip: "If a recursive function gets called with the same input more than once, save the answer in a dictionary the first time so you can just look it up next time instead of recomputing it.",
     code: "cache = {}\ndef solve(n):\n    if n in cache:\n        return cache[n]\n    cache[n] = ...\n    return cache[n]",
   },
+  variables: {
+    title: "Naming a value",
+    tip: "A variable is just a name you give a value so you can use it again later — x = 5 stores 5 under the name x.",
+    code: "x = 5\nprint(x + 1)",
+  },
+  parameters: {
+    title: "Passing values into a function",
+    tip: "A parameter is a name a function fills in from whatever you pass it when you call it — the function body doesn't know the value until it's called.",
+    code: "def double(n):\n    return n * 2\n\nprint(double(5))",
+  },
+  lists: {
+    title: "Storing more than one value",
+    tip: "A list holds several values in one variable, in order — use [] to make one and a loop to go through it.",
+    code: "nums = [1, 2, 3]\ntotal = 0\nfor n in nums:\n    total += n",
+  },
 };
 
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
@@ -454,6 +469,13 @@ const DIFFICULTY = {
   easy: { label: "EASY", color: "#5EEAD4" },
   medium: { label: "MEDIUM", color: "#F5A623" },
   hard: { label: "HARD", color: "#F87171" },
+  // Fundamentals-practice tasks (see FundamentalsPractice) use this
+  // instead of easy/medium/hard so they never match pickOneForTier's
+  // DIFFICULTY_ORDER buckets and fall out of Mystery Quest rotation
+  // automatically -- but DIFFICULTY[task.difficulty] is still read
+  // unconditionally elsewhere (e.g. the parent's Tasks tab lists every
+  // task), so this needs a real entry or those crash on undefined.
+  fundamentals: { label: "PRACTICE", color: "#A78BFA" },
 };
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
@@ -710,6 +732,62 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
           code={code} setCode={setCode} onPasteDetected={() => setPasted(true)} tip={activeTip}
           onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
           onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); setOpenedIndex(null); }} />
+      )}
+    </div>
+  );
+}
+
+// Fixed pedagogical order for the fundamentals set (simplest concept
+// first) -- any future fundamentals task not in this list still shows
+// up, just appended after the ones we do recognize.
+const FUNDAMENTALS_ORDER = ["fund_variables", "fund_loops", "fund_lists", "fund_functions", "fund_parameters"];
+
+// Deliberately simpler than MysteryBoxPicker: a fixed small pool (not
+// a large rotating one) needs no boxes, reroll, or skill-gap scoring --
+// just a plain list straight into SubmitModal. No `tip` prop is passed
+// (SubmitModal already renders nothing when tip is falsy) -- the whole
+// point of this section is an unaided recall check, not a lookup.
+function FundamentalsPractice({ kidId, tasks, onSubmit }) {
+  const [activeTask, setActiveTask] = useState(null);
+  const [explanation, setExplanation] = useState("");
+  const [code, setCode] = useState("");
+  const [pasted, setPasted] = useState(false);
+
+  const ordered = FUNDAMENTALS_ORDER
+    .map(id => tasks.find(t => t.id === id))
+    .filter(Boolean)
+    .concat(tasks.filter(t => !FUNDAMENTALS_ORDER.includes(t.id)));
+
+  function startTask(task) {
+    const draft = loadDraft(kidId, task.id);
+    setExplanation(draft.explanation || "");
+    setCode(draft.code || DEFAULT_CODE_JUDGE);
+    setPasted(draft.pasted || false);
+    setActiveTask(task);
+  }
+
+  useEffect(() => {
+    if (!activeTask) return;
+    saveDraft(kidId, activeTask.id, { code, explanation, pasted });
+  }, [code, explanation, pasted, activeTask, kidId]);
+
+  return (
+    <div>
+      <div className="grid gap-2">
+        {ordered.map(task => (
+          <button key={task.id} onClick={() => startTask(task)}
+            className="flex items-center justify-between border border-slate-700/50 hover:border-teal-300/60 rounded px-3 py-2 text-left transition-colors">
+            <span className="text-sm text-slate-200">{task.title}</span>
+            <span className="font-mono text-teal-300 text-xs flex items-center gap-1"><IconStar size={11} />{task.points}</span>
+          </button>
+        ))}
+      </div>
+
+      {activeTask && (
+        <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
+          code={code} setCode={setCode} onPasteDetected={() => setPasted(true)}
+          onCancel={() => { clearDraft(kidId, activeTask.id); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
+          onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }} />
       )}
     </div>
   );
@@ -1040,6 +1118,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
     const s = taskStatus(t.id, kid.id);
     return !s || s.status === "rejected";
   });
+  const fundamentals = available.filter(t => t.difficulty === "fundamentals");
   const pending = kidSubmissions.filter(s => s.status === "pending");
   const approved = kidSubmissions.filter(s => s.status === "approved");
 
@@ -1081,6 +1160,12 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, o
               <span className="font-mono text-xs text-amber-400 flex items-center gap-1"><IconClock size={12} /> pending</span>
             </div>
           ))}
+        </Section>
+      )}
+
+      {fundamentals.length > 0 && (
+        <Section label="FUNDAMENTALS PRACTICE">
+          <FundamentalsPractice kidId={kid.id} tasks={fundamentals} onSubmit={onSubmit} />
         </Section>
       )}
 

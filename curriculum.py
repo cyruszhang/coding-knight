@@ -7,9 +7,12 @@ over time without migrating them to a different skill set.
 """
 
 SKILLS = [
+    ("variables", "Variables", 1),
     ("shapes", "Basic shapes", 1),
     ("colors", "Color control", 1),
     ("loops_basic", "Single loops", 1),
+    ("lists", "Lists", 1),
+    ("parameters", "Function parameters", 1),
     ("nested_loops", "Nested loops", 2),
     ("conditionals", "Conditionals / input validation", 2),
     ("randomness", "Randomness", 2),
