@@ -1407,14 +1407,22 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
                     <div key={i} className={"font-mono text-xs rounded border px-3 py-2 " +
                       (r.passed ? "bg-teal-500/10 border-teal-400/40" : "bg-red-500/10 border-red-400/40")}>
                       <div className={r.passed ? "text-teal-300" : "text-red-300"}>
-                        {r.passed ? "✓" : "✗"} Test {i + 1} — input: {r.input.length ? r.input.join(", ") : "(none)"}
+                        {r.passed ? "✓" : "✗"} Test {i + 1}
                       </div>
+                      {/* Echo each input() value as a terminal would, so it's
+                          visibly clear something really was typed in before
+                          any output showed up -- otherwise a judge task's
+                          silent scripted input looks indistinguishable from
+                          no input happening at all. */}
+                      {r.input.map((v, j) => (
+                        <div key={j} className="text-cyan-300/80 mt-1 first:mt-1.5">&gt; {v}</div>
+                      ))}
                       {r.passed ? (
-                        <div className="text-slate-400 mt-1">output: {r.actual}</div>
+                        <div className="text-slate-400 mt-1 whitespace-pre-wrap">{r.actual}</div>
                       ) : (
                         <>
-                          <div className="text-slate-400 mt-1">expected: {r.expected}</div>
-                          <div className="text-slate-400">got: {r.error ? r.error : (r.actual || "(nothing printed)")}</div>
+                          <div className="text-slate-400 mt-1 whitespace-pre-wrap">expected: {r.expected}</div>
+                          <div className="text-slate-400 whitespace-pre-wrap">got: {r.error ? r.error : (r.actual || "(nothing printed)")}</div>
                         </>
                       )}
                     </div>
