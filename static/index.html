@@ -775,7 +775,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
 // however their tasks got seeded) gets a freshly generated opaque task
 // id with no shared naming convention to rely on, so skill is the only
 // thing that reliably identifies "which fundamental is this."
-const FUNDAMENTALS_ORDER = ["variables", "type_casting", "loops_basic", "lists", "functions", "parameters"];
+const FUNDAMENTALS_ORDER = ["variables", "type_casting", "loops_basic", "lists", "functions", "parameters", "simple_math", "random_library"];
 
 // Deliberately simpler than MysteryBoxPicker: a fixed small pool (not
 // a large rotating one) needs no boxes, reroll, or skill-gap scoring --
@@ -789,9 +789,11 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
   const [pasted, setPasted] = useState(false);
 
   const isRecognized = t => t.skills && t.skills.some(sk => FUNDAMENTALS_ORDER.includes(sk));
+  // flatMap (not map+find) -- a skill can now have several practice
+  // questions, not just one, so every match for a skill shows up,
+  // grouped together in FUNDAMENTALS_ORDER's order.
   const ordered = FUNDAMENTALS_ORDER
-    .map(skillId => tasks.find(t => t.skills && t.skills.includes(skillId)))
-    .filter(Boolean)
+    .flatMap(skillId => tasks.filter(t => t.skills && t.skills.includes(skillId)))
     .concat(tasks.filter(t => !isRecognized(t)));
 
   function startTask(task) {
