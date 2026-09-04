@@ -51,43 +51,45 @@ const { useState, useEffect, useRef, useMemo } = React;
 // ---------- storage: talks to the Flask+SQLite backend over the API ----------
 const API = "/api";
 
+// Auth is a session cookie now (HttpOnly, set by the server on
+// login/OAuth callback) -- fetch's default credentials mode already
+// sends it on every same-origin request, so no per-call auth plumbing
+// is needed here anymore (contrast with the old X-Parent-Pin header
+// this used to attach by hand on every mutating call).
 async function apiGet(path) {
   const res = await fetch(API + path);
   if (!res.ok) throw new Error("GET " + path + " failed (" + res.status + ")");
   return res.json();
 }
-function pinHeaders(pin) {
-  return pin ? { "X-Parent-Pin": pin } : {};
-}
-async function apiPost(path, body, pin) {
+async function apiPost(path, body) {
   const res = await fetch(API + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("POST " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiPatch(path, body, pin) {
+async function apiPatch(path, body) {
   const res = await fetch(API + path, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("PATCH " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiPut(path, body, pin) {
+async function apiPut(path, body) {
   const res = await fetch(API + path, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...pinHeaders(pin) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error("PUT " + path + " failed (" + res.status + ")");
   return res.json();
 }
-async function apiDelete(path, pin) {
-  const res = await fetch(API + path, { method: "DELETE", headers: pinHeaders(pin) });
+async function apiDelete(path) {
+  const res = await fetch(API + path, { method: "DELETE" });
   if (!res.ok) throw new Error("DELETE " + path + " failed (" + res.status + ")");
   return res.json();
 }
@@ -169,6 +171,28 @@ function captureCanvasSnapshot(targetId) {
   return out.toDataURL("image/png");
 }
 
+// Line-by-line output comparison that's exact for text but tolerant of
+// equivalent numeric formatting -- e.g. a kid using float(input())
+// instead of int(input()) prints "8.0" for an answer of 8, which is
+// mathematically correct and shouldn't fail just because int() wasn't
+// what was expected. Only kicks in when BOTH lines parse cleanly as
+// numbers; "Fizz" vs "fizz" (or any other non-numeric line) still
+// falls through to an exact string match, so case/spelling still count
+// everywhere that isn't a bare number.
+function judgeOutputsMatch(actual, expected) {
+  const actualLines = actual.split("\n");
+  const expectedLines = expected.split("\n");
+  if (actualLines.length !== expectedLines.length) return false;
+  return actualLines.every((line, i) => {
+    const a = line.trim();
+    const e = expectedLines[i].trim();
+    if (a !== "" && e !== "" && Number.isFinite(Number(a)) && Number.isFinite(Number(e))) {
+      return Number(a) === Number(e);
+    }
+    return a === e;
+  });
+}
+
 // Runs `code` once per test case against a scripted input() feed (no
 // live prompt UI -- Sk.configure's inputfun just hands input() the
 // next canned value) and diffs the captured print() output against
@@ -206,7 +230,7 @@ async function runJudgeTestCases(code, testCases) {
         Sk.importMainWithBody("<stdin>", false, code, true));
       const actual = out.trim();
       const expected = tc.expected.trim();
-      results.push({ input: tc.input, expected, actual, passed: actual === expected });
+      results.push({ input: tc.input, expected, actual, passed: judgeOutputsMatch(actual, expected) });
     } catch (err) {
       results.push({ input: tc.input, expected: tc.expected.trim(), actual: null,
                       error: err.toString(), passed: false });
@@ -735,6 +759,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
           code={code} setCode={setCode} onPasteDetected={() => setPasted(true)} tip={activeTip}
+          onSave={() => saveDraft(kidId, activeTask.id, { code, explanation, pasted })}
           onCancel={() => { clearDraft(kidId, activeTask.id); rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
           onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); setOpenedIndex(null); }} />
       )}
@@ -745,12 +770,12 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
 // Fixed pedagogical order for the fundamentals set (simplest concept,
 // and anything a later concept silently depends on, first -- e.g.
 // type_casting right after variables, since every other numeric-input
-// task quietly assumes int(input()) is already understood). Real task
-// ids carry a per-kid suffix (e.g. "fund_variables_shayne"), so this
-// matches by prefix, not exact id -- any future fundamentals task not
-// in this list still shows up, just appended after the ones we do
-// recognize.
-const FUNDAMENTALS_ORDER = ["fund_variables", "fund_typecast", "fund_loops", "fund_lists", "fund_functions", "fund_parameters"];
+// task quietly assumes int(input()) is already understood). Matches by
+// each task's tagged skill, not by id -- every kid (whichever family,
+// however their tasks got seeded) gets a freshly generated opaque task
+// id with no shared naming convention to rely on, so skill is the only
+// thing that reliably identifies "which fundamental is this."
+const FUNDAMENTALS_ORDER = ["variables", "type_casting", "loops_basic", "lists", "functions", "parameters"];
 
 // Deliberately simpler than MysteryBoxPicker: a fixed small pool (not
 // a large rotating one) needs no boxes, reroll, or skill-gap scoring --
@@ -763,9 +788,9 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
   const [code, setCode] = useState("");
   const [pasted, setPasted] = useState(false);
 
-  const isRecognized = t => FUNDAMENTALS_ORDER.some(id => t.id.startsWith(id + "_"));
+  const isRecognized = t => t.skills && t.skills.some(sk => FUNDAMENTALS_ORDER.includes(sk));
   const ordered = FUNDAMENTALS_ORDER
-    .map(id => tasks.find(t => t.id.startsWith(id + "_")))
+    .map(skillId => tasks.find(t => t.skills && t.skills.includes(skillId)))
     .filter(Boolean)
     .concat(tasks.filter(t => !isRecognized(t)));
 
@@ -797,6 +822,7 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
           code={code} setCode={setCode} onPasteDetected={() => setPasted(true)}
+          onSave={() => saveDraft(kidId, activeTask.id, { code, explanation, pasted })}
           onCancel={() => { clearDraft(kidId, activeTask.id); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
           onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }} />
       )}
@@ -805,37 +831,68 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
 }
 
 function App() {
-  const [role, setRole] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // authRole tracks the *server session*, not just local UI state --
+  // set from GET /api/auth/me on mount (a real persistent cookie now,
+  // unlike the old parentPin-in-memory/no-session model), and again
+  // after a successful kid-login or Google OAuth callback redirect.
+  const [authRole, setAuthRole] = useState(null); // null | "kid" | "parent"
+  const [authChecked, setAuthChecked] = useState(false);
+  const [familyName, setFamilyName] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [kids, setKids] = useState([]);
   const [selectedKid, setSelectedKid] = useState(null);
-  const [pendingKid, setPendingKid] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [redemptions, setRedemptions] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState(false);
-  const [parentPin, setParentPin] = useState(null);
+  const [kidLoginError, setKidLoginError] = useState(null);
   const [error, setError] = useState(null);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { bootstrap(); }, []);
 
-  async function loadAll() {
+  // On first load (or right after the Google OAuth callback redirects
+  // back to "/"), ask the server who -- if anyone -- this browser is
+  // already logged in as, and load the right data for that role. A
+  // fresh visit with no session just shows AuthLanding.
+  async function bootstrap() {
     setLoading(true);
     setError(null);
     try {
-      const [k, t, sug, s, r, cfg] = await Promise.all([
-        apiGet("/kids"), apiGet("/tasks"), apiGet("/tasks/suggestions"),
-        apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
-      ]);
-      setKids(k); setTasks(t); setSuggestions(sug); setSubmissions(s); setRedemptions(r); setSettings(cfg);
+      const me = await apiGet("/auth/me");
+      setFamilyName(me.familyName || null);
+      if (me.role === "kid") {
+        setSelectedKid(me.kid);
+        setAuthRole("kid");
+        await loadKidData(me.kid.id);
+      } else if (me.role === "parent") {
+        setAuthRole("parent");
+        await loadParentData();
+      } else {
+        setAuthRole(null);
+      }
     } catch (e) {
       setError("Couldn't reach the server. Is app.py running? (" + e.message + ")");
     } finally {
+      setAuthChecked(true);
       setLoading(false);
     }
+  }
+
+  async function loadKidData(kidId) {
+    const [t, s, r, cfg] = await Promise.all([
+      apiGet("/tasks?kid=" + kidId), apiGet("/submissions?kid=" + kidId),
+      apiGet("/redemptions?kid=" + kidId), apiGet("/settings"),
+    ]);
+    setTasks(t); setSubmissions(s); setRedemptions(r); setSettings(cfg);
+  }
+
+  async function loadParentData() {
+    const [k, t, sug, s, r, cfg] = await Promise.all([
+      apiGet("/kids"), apiGet("/tasks"), apiGet("/tasks/suggestions"),
+      apiGet("/submissions"), apiGet("/redemptions"), apiGet("/settings"),
+    ]);
+    setKids(k); setTasks(t); setSuggestions(sug); setSubmissions(s); setRedemptions(r); setSettings(cfg);
   }
 
   function taskStatus(taskId, kidId) {
@@ -844,36 +901,59 @@ function App() {
     return subs[subs.length - 1];
   }
 
-  function selectKid(kid) {
-    setPendingKid(kid);
-    setRole("kid-gate");
-    setPinInput("");
-    setPinError(false);
-  }
-
-  async function tryKidPin(pin) {
+  async function kidLogin(handle, pin) {
+    setKidLoginError(null);
     try {
-      const res = await fetch(API + "/auth/verify-kid-pin", {
+      const res = await fetch(API + "/auth/kid-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kidId: pendingKid.id, pin }),
+        body: JSON.stringify({ handle, pin }),
       });
-      if (res.ok) {
-        setSelectedKid(pendingKid); setPendingKid(null); setRole("kid"); setPinInput(""); setPinError(false);
-      } else {
-        setPinError(true);
+      const data = await res.json();
+      if (!res.ok) {
+        setKidLoginError(
+          res.status === 429 ? "Too many wrong PINs -- try again in a few minutes."
+          : data.error === "unknown handle" ? "Never heard of that ID -- check the spelling?"
+          : "Wrong PIN."
+        );
+        return;
       }
+      try { localStorage.setItem("codequest:lastHandle", handle); } catch (e) {}
+      setSelectedKid(data.kid);
+      setAuthRole("kid");
+      setLoading(true);
+      await loadKidData(data.kid.id);
+      const me = await apiGet("/auth/me");
+      setFamilyName(me.familyName || null);
     } catch (e) {
-      setPinError(true);
+      setKidLoginError("Couldn't reach the server.");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  async function logout() {
+    try { await fetch(API + "/auth/logout", { method: "POST" }); } catch (e) {}
+    setAuthRole(null); setSelectedKid(null); setFamilyName(null);
+    setKids([]); setTasks([]); setSuggestions([]); setSubmissions([]); setRedemptions([]);
+    setSettings(DEFAULT_SETTINGS); setKidLoginError(null);
   }
 
   async function updateKid(kidId, fields) {
     try {
-      const updated = await apiPut("/kids/" + kidId, fields, parentPin);
+      const updated = await apiPut("/kids/" + kidId, fields);
       setKids(kids.map(k => k.id === kidId ? updated : k));
     } catch (e) {
       setError("Update kid failed: " + e.message);
+    }
+  }
+
+  async function addKid(name) {
+    try {
+      const created = await apiPost("/kids", { name });
+      setKids([...kids, created]);
+    } catch (e) {
+      setError("Add kid failed: " + e.message);
     }
   }
 
@@ -891,7 +971,7 @@ function App() {
 
   async function reviewSubmission(subId, decision, note) {
     try {
-      const updated = await apiPatch("/submissions/" + subId, { status: decision, reviewNote: note || "" }, parentPin);
+      const updated = await apiPatch("/submissions/" + subId, { status: decision, reviewNote: note || "" });
       setSubmissions(submissions.map(s => s.id === subId ? updated : s));
     } catch (e) {
       setError("Review failed: " + e.message);
@@ -910,7 +990,7 @@ function App() {
 
   async function addTask(task) {
     try {
-      const created = await apiPost("/tasks", task, parentPin);
+      const created = await apiPost("/tasks", task);
       setTasks([...tasks, created]);
     } catch (e) {
       setError("Add task failed: " + e.message);
@@ -919,7 +999,7 @@ function App() {
 
   async function deleteTask(taskId) {
     try {
-      await apiDelete("/tasks/" + taskId, parentPin);
+      await apiDelete("/tasks/" + taskId);
       setTasks(tasks.filter(t => t.id !== taskId));
     } catch (e) {
       setError("Delete failed: " + e.message);
@@ -928,7 +1008,7 @@ function App() {
 
   async function approveSuggestion(taskId) {
     try {
-      const approved = await apiPost("/tasks/suggestions/" + taskId + "/approve", {}, parentPin);
+      const approved = await apiPost("/tasks/suggestions/" + taskId + "/approve", {});
       setSuggestions(suggestions.filter(t => t.id !== taskId));
       setTasks([...tasks, approved]);
     } catch (e) {
@@ -938,7 +1018,7 @@ function App() {
 
   async function rejectSuggestion(taskId) {
     try {
-      await apiDelete("/tasks/" + taskId, parentPin);
+      await apiDelete("/tasks/" + taskId);
       setSuggestions(suggestions.filter(t => t.id !== taskId));
     } catch (e) {
       setError("Reject failed: " + e.message);
@@ -947,32 +1027,14 @@ function App() {
 
   async function updateSettings(next) {
     try {
-      const updated = await apiPut("/settings", next, parentPin);
+      const updated = await apiPut("/settings", next);
       setSettings(updated);
-      if (next.parentPin) setParentPin(next.parentPin);
     } catch (e) {
       setError("Settings save failed: " + e.message);
     }
   }
 
-  async function tryParentPin(pin) {
-    try {
-      const res = await fetch(API + "/auth/verify-pin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
-      });
-      if (res.ok) {
-        setParentPin(pin); setRole("parent"); setPinInput(""); setPinError(false);
-      } else {
-        setPinError(true);
-      }
-    } catch (e) {
-      setPinError(true);
-    }
-  }
-
-  if (loading) {
+  if (!authChecked || loading) {
     return (
       <div style={GRID_BG} className="flex items-center justify-center">
         <div className="text-teal-300 font-mono text-sm tracking-widest animate-pulse">CONNECTING…</div>
@@ -985,32 +1047,22 @@ function App() {
       {error && (
         <div className="bg-red-500/20 border-b border-red-400/40 text-red-200 text-sm px-4 py-2 flex items-center gap-2 font-mono">
           <IconAlert /> {error}
-          <button onClick={loadAll} className="ml-auto underline">retry</button>
+          <button onClick={bootstrap} className="ml-auto underline">retry</button>
           <button onClick={() => setError(null)} className="underline">dismiss</button>
         </div>
       )}
-      {!role && <RoleSelect kids={kids} onSelectKid={selectKid} onParentAttempt={() => setRole("parent-gate")} />}
-      {role === "parent-gate" && (
-        <PinGate pinInput={pinInput} setPinInput={setPinInput} pinError={pinError}
-          onSubmit={() => tryParentPin(pinInput)}
-          onBack={() => { setRole(null); setPinInput(""); setPinError(false); }} />
-      )}
-      {role === "kid-gate" && pendingKid && (
-        <PinGate pinInput={pinInput} setPinInput={setPinInput} pinError={pinError}
-          label={pendingKid.name.toUpperCase() + " ACCESS"}
-          onSubmit={() => tryKidPin(pinInput)}
-          onBack={() => { setRole(null); setPendingKid(null); setPinInput(""); setPinError(false); }} />
-      )}
-      {role === "kid" && selectedKid && (
+      {!authRole && <AuthLanding onKidLogin={kidLogin} kidLoginError={kidLoginError} />}
+      {authRole === "kid" && selectedKid && (
         <KidView kid={selectedKid} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
           taskStatus={taskStatus}
-          onSubmit={submitTask} onRedeem={redeem} onBack={() => { setRole(null); setSelectedKid(null); }} />
+          onSubmit={submitTask} onRedeem={redeem} onBack={logout} />
       )}
-      {role === "parent" && (
+      {authRole === "parent" && (
         <ParentView kids={kids} tasks={tasks} suggestions={suggestions} submissions={submissions} redemptions={redemptions} settings={settings}
           onReview={reviewSubmission} onAddTask={addTask} onDeleteTask={deleteTask}
           onApproveSuggestion={approveSuggestion} onRejectSuggestion={rejectSuggestion}
-          onUpdateSettings={updateSettings} onUpdateKid={updateKid} onBack={() => { setRole(null); setParentPin(null); }} />
+          onUpdateSettings={updateSettings} onUpdateKid={updateKid} onAddKid={addKid}
+          familyName={familyName} onBack={logout} />
       )}
     </div>
   );
@@ -1031,7 +1083,23 @@ function Panel({ children, className = "" }) {
   );
 }
 
-function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
+// Replaces the old RoleSelect (tap-your-name-from-a-list) + PinGate --
+// there's no more public list of a family's kids to tap through (that
+// would leak family membership to anyone who loaded the page), so a
+// kid types their own generated login id instead, and a parent signs
+// in with Google. Both resolve family_id from the server session, not
+// from anything picked in this UI.
+function AuthLanding({ onKidLogin, kidLoginError }) {
+  const [handle, setHandle] = useState(() => {
+    try { return localStorage.getItem("codequest:lastHandle") || ""; } catch (e) { return ""; }
+  });
+  const [pin, setPin] = useState("");
+
+  function submit() {
+    if (!handle.trim() || !pin.trim()) return;
+    onKidLogin(handle.trim(), pin.trim());
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 gap-10">
       <div className="text-center">
@@ -1041,48 +1109,27 @@ function RoleSelect({ kids, onSelectKid, onParentAttempt }) {
         </div>
         <h1 className="text-3xl font-bold text-slate-100">Mission Control</h1>
       </div>
-      <div className="flex gap-5 w-full max-w-lg flex-col sm:flex-row flex-wrap justify-center">
-        {kids.map(kid => (
-          <button key={kid.id} onClick={() => onSelectKid(kid)} className="flex-1 group">
-            <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-teal-300/60 transition-colors">
-              {kid.avatar ? (
-                <img src={kid.avatar} alt={kid.name} className="w-14 h-14 rounded-full object-cover border-2 border-teal-300/50" />
-              ) : (
-                <IconZap size={28} className="text-teal-300" />
-              )}
-              <span className="font-mono text-sm tracking-wide text-slate-200">{kid.name.toUpperCase()}</span>
-              <span className="text-xs text-slate-400">View tasks &amp; points</span>
-            </Panel>
-          </button>
-        ))}
-        <button onClick={onParentAttempt} className="flex-1 group">
-          <Panel className="flex flex-col items-center gap-3 py-8 group-hover:border-amber-400/60 transition-colors">
-            <IconLock size={28} className="text-amber-400" />
-            <span className="font-mono text-sm tracking-wide text-slate-200">PARENT</span>
-            <span className="text-xs text-slate-400">Manage &amp; review</span>
+      <div className="flex gap-6 w-full max-w-md flex-col">
+        <Panel className="flex flex-col items-center gap-3 py-6">
+          <IconZap size={24} className="text-teal-300" />
+          <span className="font-mono text-xs tracking-widest text-slate-300">I'M A KID</span>
+          <input value={handle} onChange={(e) => setHandle(e.target.value)}
+            placeholder="Your Code Quest ID (e.g. PinkPanther29)" autoCapitalize="none"
+            className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-center font-mono text-sm outline-none focus:border-teal-300" />
+          <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="PIN"
+            className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-center tracking-[0.4em] font-mono text-lg outline-none focus:border-teal-300" />
+          {kidLoginError && <div className="text-red-400 text-xs font-mono text-center">{kidLoginError}</div>}
+          <button onClick={submit} className="w-full bg-teal-400 text-slate-900 font-semibold rounded py-2 text-sm transition-colors">Enter</button>
+        </Panel>
+        <a href="/api/auth/google/login" className="block">
+          <Panel className="flex flex-col items-center gap-2 py-6 hover:border-amber-400/60 transition-colors">
+            <IconLock size={24} className="text-amber-400" />
+            <span className="font-mono text-sm tracking-wide text-slate-200">I'M A GROWN-UP</span>
+            <span className="text-xs text-slate-400">Sign in with Google</span>
           </Panel>
-        </button>
+        </a>
       </div>
-    </div>
-  );
-}
-
-function PinGate({ pinInput, setPinInput, pinError, onSubmit, onBack, label = "PARENT ACCESS" }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center px-6">
-      <Panel className="w-full max-w-xs flex flex-col gap-4">
-        <div className="font-mono text-xs tracking-widest text-amber-400 flex items-center gap-2">
-          <IconLock size={13} /> {label}
-        </div>
-        <input type="password" inputMode="numeric" value={pinInput} onChange={(e) => setPinInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()} placeholder="Enter PIN" autoFocus
-          className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-center tracking-[0.4em] font-mono text-lg outline-none focus:border-amber-400" />
-        {pinError && <div className="text-red-400 text-xs font-mono text-center">Wrong PIN</div>}
-        <button onClick={onSubmit} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded py-2 text-sm transition-colors">Enter</button>
-        <button onClick={onBack} className="text-slate-400 text-xs flex items-center justify-center gap-1 hover:text-slate-200">
-          <IconBack size={12} /> Back
-        </button>
-      </Panel>
     </div>
   );
 }
@@ -1268,7 +1315,7 @@ function Section({ label, children }) {
   );
 }
 
-function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected, tip }) {
+function SubmitModal({ task, explanation, setExplanation, code, setCode, onCancel, onSubmit, onPasteDetected, onSave, tip }) {
   const isJudge = task.vehicle === "judge";
   const [hasRun, setHasRun] = useState(false);
   const [running, setRunning] = useState(false);
@@ -1278,6 +1325,18 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   const [entered, setEntered] = useState(false);
   const [showTip, setShowTip] = useState(false);
   const [testResults, setTestResults] = useState([]);
+  const [showConfirmBack, setShowConfirmBack] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  // The draft is already saved continuously (every code/explanation
+  // keystroke, via the parent's own effect) -- this button doesn't add
+  // new persistence, it gives the kid an explicit, reassuring moment of
+  // "yes, this is saved" rather than only ever happening silently.
+  function handleSave() {
+    onSave();
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 1500);
+  }
   // A ref, not state: handleRun's in-flight async closure needs the live
   // value at the moment runPython's promise settles, not the value from
   // when Run was clicked — state would be stale inside that closure.
@@ -1350,7 +1409,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
       <div style={GRID_BG}
         className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
         <div className="max-w-3xl mx-auto px-4 py-6 pb-16 text-slate-100">
-          <TopBar onBack={onCancel} backLabel="Back" label={task.title.toUpperCase()} />
+          <TopBar onBack={() => setShowConfirmBack(true)} backLabel="Back" label={task.title.toUpperCase()} />
 
           <Panel className="mb-4">
             <div className="font-semibold text-slate-100 mb-1">{task.title}</div>
@@ -1361,12 +1420,18 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm text-slate-300">Your code</label>
-              {tip && (
-                <button onClick={() => setShowTip(v => !v)}
-                  className="text-xs font-mono text-amber-300 hover:text-amber-200 flex items-center gap-1">
-                  💡 {showTip ? "Hide tip" : "Tip"}
+              <div className="flex items-center gap-3">
+                <button onClick={handleSave}
+                  className={"text-xs font-mono flex items-center gap-1 " + (justSaved ? "text-teal-300" : "text-slate-400 hover:text-slate-200")}>
+                  {justSaved ? "✓ Saved" : "💾 Save"}
                 </button>
-              )}
+                {tip && (
+                  <button onClick={() => setShowTip(v => !v)}
+                    className="text-xs font-mono text-amber-300 hover:text-amber-200 flex items-center gap-1">
+                    💡 {showTip ? "Hide tip" : "Tip"}
+                  </button>
+                )}
+              </div>
             </div>
             {tip && showTip && (
               <div className="mb-2 rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
@@ -1488,6 +1553,23 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
           </Panel>
         </div>
       </div>
+      {showConfirmBack && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/70 flex items-center justify-center px-6">
+          <Panel className="w-full max-w-xs flex flex-col gap-4 text-center">
+            <div className="text-sm text-slate-100">Are you sure you want to delete your code?</div>
+            <div className="flex gap-2">
+              <button onClick={onCancel}
+                className="flex-1 bg-red-500 hover:bg-red-400 text-white font-semibold rounded py-2 text-sm">
+                Yes
+              </button>
+              <button onClick={() => setShowConfirmBack(false)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-100 font-semibold rounded py-2 text-sm">
+                Cancel
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
     </div>
   );
 }
@@ -1497,13 +1579,23 @@ function kidName(kids, kidId) {
   return k ? k.name : kidId;
 }
 
-function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onUpdateKid, onBack }) {
-  const [tab, setTab] = useState("review");
+function ParentView({ kids, tasks, suggestions, submissions, redemptions, settings, onReview, onAddTask, onDeleteTask, onApproveSuggestion, onRejectSuggestion, onUpdateSettings, onUpdateKid, onAddKid, familyName, onBack }) {
+  // A brand-new family has zero kids -- land straight on Settings
+  // (where "add a kid" now lives) instead of an emptily-blank Review
+  // tab. Lazy initializer only, so this doesn't yank the parent back
+  // to Settings later just because kids briefly re-renders empty.
+  const [tab, setTab] = useState(() => (kids.length === 0 ? "settings" : "review"));
   const pending = submissions.filter(s => s.status === "pending");
   const tabCount = { review: pending.length, suggestions: suggestions.length };
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <TopBar onBack={onBack} label="PARENT" />
+      {familyName && <div className="text-xs font-mono text-slate-500 -mt-4 mb-4">{familyName}</div>}
+      {kids.length === 0 && (
+        <div className="mb-4 text-sm text-amber-300 font-mono bg-amber-500/10 border border-amber-400/30 rounded px-3 py-2">
+          Add your first kid in the Settings tab to get started.
+        </div>
+      )}
       <div className="flex gap-1 mb-6 font-mono text-xs">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
@@ -1516,7 +1608,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
       {tab === "suggestions" && <SuggestionsTab suggestions={suggestions} kids={kids} onApprove={onApproveSuggestion} onReject={onRejectSuggestion} />}
       {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
       {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
-      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKid={onUpdateKid} />}
+      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKid={onUpdateKid} onAddKid={onAddKid} />}
     </div>
   );
 }
@@ -1782,11 +1874,11 @@ function HistoryTab({ submissions, redemptions, kids }) {
   );
 }
 
-function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
+function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }) {
   const [local, setLocal] = useState(settings);
-  const [newPin, setNewPin] = useState("");
   const [kidPins, setKidPins] = useState({});
   const [kidAvatars, setKidAvatars] = useState({});
+  const [newKidName, setNewKidName] = useState("");
 
   async function pickAvatar(kidId, file) {
     if (!file) return;
@@ -1795,10 +1887,7 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
   }
 
   function save() {
-    const payload = { ...local };
-    if (newPin.trim()) payload.parentPin = newPin.trim();
-    onUpdateSettings(payload);
-    setNewPin("");
+    onUpdateSettings(local);
     kids.forEach(kid => {
       const fields = {};
       if ((kidPins[kid.id] || "").trim()) fields.pin = kidPins[kid.id].trim();
@@ -1808,6 +1897,13 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
     setKidPins({});
     setKidAvatars({});
   }
+
+  function addKid() {
+    if (!newKidName.trim()) return;
+    onAddKid(newKidName.trim());
+    setNewKidName("");
+  }
+
   return (
     <Panel className="grid gap-4 max-w-sm">
       <div>
@@ -1820,11 +1916,6 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
         <input type="number" value={local.dailyCapMinutes} onChange={(e) => setLocal({ ...local, dailyCapMinutes: Number(e.target.value) })}
           className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
       </div>
-      <div>
-        <label className="text-xs font-mono text-slate-400 block mb-1">New parent PIN (leave blank to keep current)</label>
-        <input value={newPin} onChange={(e) => setNewPin(e.target.value)} placeholder="••••"
-          className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm w-full outline-none focus:border-teal-300" />
-      </div>
       {kids.map(kid => (
         <div key={kid.id} className="border-t border-slate-700/50 pt-4">
           <div className="flex items-center gap-3 mb-2">
@@ -1835,7 +1926,10 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
                 <IconZap size={16} className="text-teal-300" />
               </div>
             )}
-            <span className="text-sm text-slate-300">{kid.name}</span>
+            <div>
+              <div className="text-sm text-slate-300">{kid.name}</div>
+              <div className="text-xs font-mono text-teal-300">Login ID: {kid.handle}</div>
+            </div>
           </div>
           <label className="text-xs font-mono text-slate-400 block mb-1">Photo</label>
           <input type="file" accept="image/*" onChange={(e) => pickAvatar(kid.id, e.target.files[0])}
@@ -1848,6 +1942,15 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid }) {
       <button onClick={save} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded py-2 text-sm">
         Save settings
       </button>
+      <div className="border-t border-slate-700/50 pt-4">
+        <label className="text-xs font-mono text-slate-400 block mb-1">Add a kid</label>
+        <div className="flex gap-2">
+          <input value={newKidName} onChange={(e) => setNewKidName(e.target.value)} placeholder="Name"
+            onKeyDown={(e) => e.key === "Enter" && addKid()}
+            className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm flex-1 outline-none focus:border-teal-300" />
+          <button onClick={addKid} className="bg-teal-400 text-slate-900 font-semibold rounded px-3 text-sm">Add</button>
+        </div>
+      </div>
     </Panel>
   );
 }
