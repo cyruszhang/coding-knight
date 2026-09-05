@@ -347,6 +347,14 @@ def init_db():
             value TEXT NOT NULL,
             PRIMARY KEY (family_id, key)
         );
+        CREATE TABLE IF NOT EXISTS teams (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            code TEXT NOT NULL,
+            goal_points INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_code ON teams(code);
         """
     )
     for table in ("tasks", "submissions", "redemptions"):
@@ -372,6 +380,11 @@ def init_db():
     _ensure_column(db, "kids", "handle", "handle TEXT")
     _ensure_column(db, "kids", "failed_pin_count", "failed_pin_count INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "kids", "pin_locked_until", "pin_locked_until TEXT")
+    # Cross-family teams -- deliberately the one place a kid's data is
+    # visible outside their own family (see /api/teams/me). Nullable: a
+    # kid is on at most one team at a time, enforced just by this being
+    # a single column rather than a join table.
+    _ensure_column(db, "kids", "team_id", "team_id TEXT")
     # Must run after the _ensure_column call above -- kids predates
     # family_id (an existing table gaining a new column), unlike parents,
     # which is created fresh with family_id already in its column list.
@@ -451,6 +464,21 @@ def generate_kid_handle(db):
     raise RuntimeError("could not generate a unique kid handle")
 
 
+# Excludes visually-ambiguous characters (0/O, 1/I/L) -- kids read this
+# code off a screen or a piece of paper to share with a friend, so it
+# needs to survive that without transcription errors.
+TEAM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_team_code(db):
+    for _ in range(20):
+        code = "".join(random.choice(TEAM_CODE_ALPHABET) for _ in range(6))
+        exists = dbmod.fetchone(db.execute("SELECT 1 FROM teams WHERE code=?", (code,)))
+        if not exists:
+            return code
+    raise RuntimeError("could not generate a unique team code")
+
+
 def seed_starter_tasks_for_kid(db, kid_id):
     rows = []
     for title, points, diff, brief, skills in STARTER_TURTLE_TASKS:
@@ -490,8 +518,18 @@ def index():
 @require_parent_login
 def list_kids():
     db = get_db()
-    rows = dbmod.fetchall(db.execute("SELECT * FROM kids WHERE family_id=?", (g.family_id,)))
-    return jsonify([row_to_kid(r) for r in rows])
+    rows = dbmod.fetchall(db.execute(
+        """SELECT kids.*, teams.name AS team_name FROM kids
+           LEFT JOIN teams ON teams.id = kids.team_id
+           WHERE kids.family_id=?""",
+        (g.family_id,),
+    ))
+    out = []
+    for r in rows:
+        kid = row_to_kid(r)
+        kid["teamName"] = r["team_name"]
+        out.append(kid)
+    return jsonify(out)
 
 
 @app.route("/api/kids", methods=["POST"])
@@ -949,6 +987,103 @@ def update_settings():
             )
     dbmod.commit_and_sync(db)
     return get_settings()
+
+
+# ---------------- Teams ----------------
+# Kid-facing only -- parents don't manage teams directly. A team crosses
+# family boundaries on purpose (the one place in this codebase that's
+# true), so every route here must stay narrow about what it exposes:
+# handle + points, never name/email/family_id/pin.
+
+@app.route("/api/teams", methods=["POST"])
+@require_family_session
+def create_team():
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "missing field: name"}), 400
+    try:
+        goal_points = int(data.get("goalPoints") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "goalPoints must be a number"}), 400
+    db = get_db()
+    team_id = "team_" + uuid.uuid4().hex[:10]
+    code = generate_team_code(db)
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "INSERT INTO teams (id, name, code, goal_points, created_at) VALUES (?, ?, ?, ?, ?)",
+        (team_id, name, code, goal_points, now),
+    )
+    db.execute("UPDATE kids SET team_id=? WHERE id=?", (team_id, g.kid_id))
+    dbmod.commit_and_sync(db)
+    return jsonify({"id": team_id, "name": name, "code": code, "goalPoints": goal_points}), 201
+
+
+@app.route("/api/teams/join", methods=["POST"])
+@require_family_session
+def join_team():
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    data = request.get_json(force=True)
+    code = (data.get("code") or "").strip().upper()
+    db = get_db()
+    team = dbmod.fetchone(db.execute("SELECT * FROM teams WHERE code=?", (code,)))
+    if not team:
+        return jsonify({"error": "unknown team code"}), 404
+    db.execute("UPDATE kids SET team_id=? WHERE id=?", (team["id"], g.kid_id))
+    dbmod.commit_and_sync(db)
+    return jsonify({"id": team["id"], "name": team["name"], "code": team["code"], "goalPoints": team["goal_points"]})
+
+
+@app.route("/api/teams/leave", methods=["POST"])
+@require_family_session
+def leave_team():
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    db = get_db()
+    db.execute("UPDATE kids SET team_id=NULL WHERE id=?", (g.kid_id,))
+    dbmod.commit_and_sync(db)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/teams/me", methods=["GET"])
+@require_family_session
+def my_team():
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    db = get_db()
+    kid = dbmod.fetchone(db.execute("SELECT team_id FROM kids WHERE id=?", (g.kid_id,)))
+    if not kid or not kid["team_id"]:
+        return jsonify({"team": None})
+    team = dbmod.fetchone(db.execute("SELECT * FROM teams WHERE id=?", (kid["team_id"],)))
+    if not team:
+        # Team was somehow deleted out from under this kid -- treat as
+        # "not on a team" rather than erroring.
+        return jsonify({"team": None})
+    # The one deliberate cross-family read in this codebase: every other
+    # query in app.py scopes to g.family_id, but a team leaderboard is
+    # exactly the point here. Only handle + lifetime points leave this
+    # query -- no name, email, family_id, or pin.
+    leaderboard = dbmod.fetchall(db.execute(
+        """SELECT k.handle AS handle,
+                  COALESCE(SUM(CASE WHEN s.status='approved' THEN s.points ELSE 0 END), 0) AS points
+           FROM kids k LEFT JOIN submissions s ON s.kid_id = k.id
+           WHERE k.team_id=?
+           GROUP BY k.id
+           ORDER BY points DESC""",
+        (team["id"],),
+    ))
+    return jsonify({
+        "team": {
+            "id": team["id"],
+            "name": team["name"],
+            "code": team["code"],
+            "goalPoints": team["goal_points"],
+            "leaderboard": [{"handle": r["handle"], "points": r["points"]} for r in leaderboard],
+        }
+    })
 
 
 if __name__ == "__main__":
