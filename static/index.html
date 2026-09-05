@@ -25,11 +25,12 @@
     const { defaultKeymap, history, historyKeymap, indentWithTab } = await import("https://esm.sh/@codemirror/commands@6");
     const { python } = await import("https://esm.sh/@codemirror/lang-python@6");
     const { autocompletion, acceptCompletion, closeBrackets, closeBracketsKeymap, completionKeymap } = await import("https://esm.sh/@codemirror/autocomplete@6");
-    const { syntaxHighlighting, defaultHighlightStyle } = await import("https://esm.sh/@codemirror/language@6");
+    const { syntaxHighlighting, defaultHighlightStyle, HighlightStyle } = await import("https://esm.sh/@codemirror/language@6");
+    const { tags } = await import("https://esm.sh/@lezer/highlight@1");
     return { EditorView, keymap, lineNumbers, drawSelection, placeholder,
              defaultKeymap, history, historyKeymap, indentWithTab, python,
              autocompletion, acceptCompletion, closeBrackets, closeBracketsKeymap, completionKeymap,
-             syntaxHighlighting, defaultHighlightStyle };
+             syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags };
   })();
 </script>
 <link rel="icon" type="image/svg+xml" href="/turtle-knight.svg">
@@ -291,9 +292,13 @@ async function jediCompletionSource(context) {
   return { from: word.from, options: completions.map(([name, type, doc]) => ({ label: name, type, info: doc || undefined })) };
 }
 
-// Matches the app's existing slate/teal palette (see GRID_BG, Panel,
-// and the old textarea's classes below) rather than pulling in a
-// separate CM theme package just for color values already defined here.
+// A light, GitHub-style island inside the app's otherwise dark chrome --
+// the surrounding page stays dark (GRID_BG, Panel, etc.), but the code
+// itself gets a white background and GitHub's real syntax-highlighting
+// palette (Primer's "prettylights" colors), since a single flat teal
+// text color on dark slate was making several token types hard to tell
+// apart. The bordered host div (see Editor below) frames the switch so
+// it doesn't look like a stray white rectangle against the dark page.
 function codeQuestTheme(CM) {
   // CM6 sizes to its content by default (unlike the old textarea's fixed
   // rows={12}) -- with one short line typed, it was collapsing down to
@@ -301,12 +306,35 @@ function codeQuestTheme(CM) {
   // proper, prominent editing area regardless of content; maxHeight +
   // scroll stops a very long program from growing the page unbounded.
   return CM.EditorView.theme({
-    "&": { backgroundColor: "#1e293b", color: "#99f6e4", fontSize: "0.8rem", minHeight: "320px", maxHeight: "520px" },
-    ".cm-content": { fontFamily: "ui-monospace, monospace", caretColor: "#5eead4" },
-    ".cm-gutters": { backgroundColor: "#1e293b", color: "#64748b", border: "none" },
+    "&": { backgroundColor: "#ffffff", color: "#24292f", fontSize: "0.8rem", minHeight: "320px", maxHeight: "520px" },
+    ".cm-content": { fontFamily: "ui-monospace, monospace", caretColor: "#0969da" },
+    ".cm-gutters": { backgroundColor: "#f6f8fa", color: "#6e7781", border: "none" },
+    ".cm-activeLine": { backgroundColor: "#f6f8fa" },
+    ".cm-activeLineGutter": { backgroundColor: "#eaeef2" },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "#b6e3ff !important" },
     "&.cm-focused": { outline: "none" },
     ".cm-scroller": { overflow: "auto", minHeight: "320px", maxHeight: "520px" },
-  }, { dark: true });
+  }, { dark: false });
+}
+
+// GitHub's actual light-mode syntax colors (Primer "prettylights"
+// variables), mapped onto lezer's generic highlight tags -- not a
+// vague approximation, the hex values are GitHub's own.
+function githubHighlightStyle(CM) {
+  const t = CM.tags;
+  return CM.HighlightStyle.define([
+    { tag: t.comment, color: "#6e7781", fontStyle: "italic" },
+    { tag: t.string, color: "#0a3069" },
+    { tag: [t.number, t.bool, t.null, t.atom], color: "#0550ae" },
+    { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: "#cf222e" },
+    { tag: [t.definitionKeyword, t.definition(t.variableName), t.className], color: "#953800" },
+    { tag: t.operator, color: "#cf222e" },
+    { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#8250df" },
+    { tag: t.propertyName, color: "#0550ae" },
+    { tag: t.self, color: "#cf222e" },
+    { tag: t.variableName, color: "#24292f" },
+    { tag: t.punctuation, color: "#24292f" },
+  ]);
 }
 
 // Wraps a CodeMirror 6 EditorView with the same external contract the
@@ -332,7 +360,7 @@ function Editor({ value, onChange, onPasteDetected }) {
           CM.drawSelection(),
           CM.closeBrackets(),
           CM.python(),
-          CM.syntaxHighlighting(CM.defaultHighlightStyle),
+          CM.syntaxHighlighting(githubHighlightStyle(CM)),
           CM.autocompletion({ override: [jediCompletionSource] }),
           // Tab is context-sensitive, matching every mainstream editor
           // (VS Code, PyCharm, Sublime): accepts the open suggestion if
@@ -371,7 +399,7 @@ function Editor({ value, onChange, onPasteDetected }) {
   return (
     <div>
       {!ready && <div className="text-xs font-mono text-slate-500 p-3 border border-slate-600 rounded bg-slate-800">Loading editor…</div>}
-      <div ref={hostRef} className={"rounded border border-slate-600 focus-within:border-teal-300 overflow-hidden " + (ready ? "" : "hidden")} />
+      <div ref={hostRef} className={"rounded border border-slate-300 focus-within:border-teal-400 overflow-hidden " + (ready ? "" : "hidden")} />
     </div>
   );
 }
@@ -1209,7 +1237,6 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
   onSubmit, onRedeem, onBack, onCreateTeam, onJoinTeam, onLeaveTeam }) {
   const [tab, setTab] = useState("quest");
   const [redeemMinutes, setRedeemMinutes] = useState(15);
-  const [viewingCompleted, setViewingCompleted] = useState(null);
 
   const kidTasks = tasks.filter(t => t.kidId === kid.id);
   const kidSubmissions = submissions.filter(s => s.kidId === kid.id);
@@ -1238,7 +1265,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <div className="mb-4 font-mono text-sm text-slate-300 tracking-wide">{kid.name.toUpperCase()}</div>
       <div className="flex gap-1 mb-6 font-mono text-xs">
-        {["quest", "learn", "community", "me"].map(key => (
+        {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
             className={"px-3 py-1.5 rounded-t border-b-2 tracking-wide " + (tab === key ? "border-amber-400 text-amber-400" : "border-transparent text-slate-500 hover:text-slate-300")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
@@ -1289,26 +1316,6 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
           <Section label="MYSTERY QUESTS">
             <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
           </Section>
-
-          {approved.length > 0 && (
-            <Section label={"COMPLETED (" + approved.length + ")"}>
-              <div className="grid grid-cols-3 gap-2">
-                {approved.map(s => (
-                  <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
-                    {s.snapshot ? (
-                      <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors" />
-                    ) : (
-                      <div className="w-full aspect-square flex items-center justify-center bg-slate-900/40 rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors">
-                        <IconCheck size={20} className="text-teal-300" />
-                      </div>
-                    )}
-                    <span className="text-xs text-slate-400 text-center leading-tight">{s.title}</span>
-                    <span className="font-mono text-xs text-teal-300">+{s.points}</span>
-                  </button>
-                ))}
-              </div>
-            </Section>
-          )}
         </div>
       )}
 
@@ -1322,6 +1329,10 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
         )
       )}
 
+      {tab === "history" && (
+        <HistoryPanel kidId={kid.id} kidTasks={kidTasks} approved={approved} onSubmit={onSubmit} />
+      )}
+
       {tab === "community" && (
         <CommunityPanel team={team} teamError={teamError}
           onCreateTeam={onCreateTeam} onJoinTeam={onJoinTeam} onLeaveTeam={onLeaveTeam} />
@@ -1329,6 +1340,127 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
       {tab === "me" && (
         <MePanel submissions={kidSubmissions} onLogout={onBack} />
+      )}
+    </div>
+  );
+}
+
+// Pulls together everything a kid has already done or started: approved
+// submissions (COMPLETED) and localStorage drafts with real content
+// (SAVED), split into the same Mystery Quests / Fundamentals Practice
+// categories the Quest and Learn tabs already use. Reuses SubmitModal
+// (to resume a draft) and CompletedDetail (to review finished work)
+// rather than building new viewers for either.
+function HistoryPanel({ kidId, kidTasks, approved, onSubmit }) {
+  const [viewingCompleted, setViewingCompleted] = useState(null);
+  const [activeTask, setActiveTask] = useState(null);
+  const [explanation, setExplanation] = useState("");
+  const [code, setCode] = useState("");
+  const [pasted, setPasted] = useState(false);
+
+  function categoryOf(task) {
+    return task && task.difficulty === "fundamentals" ? "Fundamentals Practice" : "Mystery Quests";
+  }
+
+  // Drafts aren't tracked in any React state upstream -- they live only
+  // in localStorage (see saveDraft/loadDraft) -- so this scans for keys
+  // belonging to this kid rather than reading from a prop. Skips a
+  // draft that's empty or still just the untouched starter code, so an
+  // opened-but-never-typed-in task doesn't show up as "unfinished work."
+  const drafts = [];
+  try {
+    const prefix = "codequest:draft:" + kidId + ":";
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      const taskId = key.slice(prefix.length);
+      const task = kidTasks.find(t => t.id === taskId);
+      if (!task) continue;
+      let draft;
+      try { draft = JSON.parse(localStorage.getItem(key)); } catch (e) { continue; }
+      const blankDefault = task.vehicle === "judge" ? DEFAULT_CODE_JUDGE : DEFAULT_CODE_TURTLE;
+      if (!draft || !draft.code || draft.code.trim() === "" || draft.code === blankDefault) continue;
+      drafts.push({ task, draft });
+    }
+  } catch (e) {}
+
+  function startResume(task, draft) {
+    setExplanation(draft.explanation || "");
+    setCode(draft.code || "");
+    setPasted(draft.pasted || false);
+    setActiveTask(task);
+  }
+
+  useEffect(() => {
+    if (!activeTask) return;
+    saveDraft(kidId, activeTask.id, { code, explanation, pasted });
+  }, [code, explanation, pasted, activeTask, kidId]);
+
+  function groupBy(items, keyFn) {
+    const groups = {};
+    items.forEach(item => { const k = keyFn(item); (groups[k] = groups[k] || []).push(item); });
+    return groups;
+  }
+  const CATEGORY_ORDER = ["Mystery Quests", "Fundamentals Practice"];
+  const draftGroups = groupBy(drafts, d => categoryOf(d.task));
+  const completedGroups = groupBy(approved, s => categoryOf(kidTasks.find(t => t.id === s.taskId)));
+
+  return (
+    <div className="space-y-6">
+      {drafts.length > 0 && (
+        <div>
+          <div className="font-mono text-xs text-slate-400 tracking-widest mb-2">SAVED (UNFINISHED)</div>
+          {CATEGORY_ORDER.filter(cat => draftGroups[cat]).map(cat => (
+            <div key={cat} className="mb-3">
+              <div className="text-xs text-slate-500 font-mono mb-1">{cat}</div>
+              {draftGroups[cat].map(({ task, draft }) => (
+                <button key={task.id} onClick={() => startResume(task, draft)}
+                  className="w-full flex items-center justify-between py-2 px-2 border-b border-slate-700/50 last:border-0 text-left hover:bg-slate-800/30 rounded">
+                  <span className="text-slate-300 text-sm">{task.title}</span>
+                  <span className="font-mono text-xs text-amber-400">Resume</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {approved.length > 0 && (
+        <div>
+          <div className="font-mono text-xs text-slate-400 tracking-widest mb-2">COMPLETED ({approved.length})</div>
+          {CATEGORY_ORDER.filter(cat => completedGroups[cat]).map(cat => (
+            <div key={cat} className="mb-3">
+              <div className="text-xs text-slate-500 font-mono mb-1">{cat}</div>
+              <div className="grid grid-cols-3 gap-2">
+                {completedGroups[cat].map(s => (
+                  <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
+                    {s.snapshot ? (
+                      <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors" />
+                    ) : (
+                      <div className="w-full aspect-square flex items-center justify-center bg-slate-900/40 rounded border border-slate-700/50 hover:border-teal-300/60 transition-colors">
+                        <IconCheck size={20} className="text-teal-300" />
+                      </div>
+                    )}
+                    <span className="text-xs text-slate-400 text-center leading-tight">{s.title}</span>
+                    <span className="font-mono text-xs text-teal-300">+{s.points}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {drafts.length === 0 && approved.length === 0 && (
+        <div className="text-sm text-slate-500 font-mono py-6 text-center">Nothing here yet -- finish or save a task and it'll show up.</div>
+      )}
+
+      {activeTask && (
+        <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
+          code={code} setCode={setCode} onPasteDetected={() => setPasted(true)}
+          onSave={() => saveDraft(kidId, activeTask.id, { code, explanation, pasted })}
+          onCancel={() => { clearDraft(kidId, activeTask.id); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
+          onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }} />
       )}
 
       {viewingCompleted && (
