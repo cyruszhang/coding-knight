@@ -1476,7 +1476,7 @@ def join_team():
     db = get_db()
     team = dbmod.fetchone(db.execute("SELECT * FROM teams WHERE code=?", (code,)))
     if not team:
-        return jsonify({"error": "unknown team code"}), 404
+        return jsonify({"error": "unknown guild code"}), 404
     db.execute("UPDATE kids SET team_id=? WHERE id=?", (team["id"], g.kid_id))
     dbmod.commit_and_sync(db)
     return jsonify({"id": team["id"], "name": team["name"], "code": team["code"], "goalPoints": team["goal_points"]})

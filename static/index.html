@@ -1059,7 +1059,7 @@ function App() {
       await apiPost("/teams", { name, goalPoints });
       await refreshTeam();
     } catch (e) {
-      setTeamError("Couldn't create the team.");
+      setTeamError("Couldn't create the guild.");
     }
   }
 
@@ -1073,7 +1073,7 @@ function App() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setTeamError(data.error === "unknown team code" ? "Never heard of that team code -- check the spelling?" : "Couldn't join that team.");
+        setTeamError(data.error === "unknown guild code" ? "Never heard of that guild code -- check the spelling?" : "Couldn't join that guild.");
         return;
       }
       await refreshTeam();
@@ -1088,7 +1088,7 @@ function App() {
       await apiPost("/teams/leave", {});
       await refreshTeam();
     } catch (e) {
-      setTeamError("Couldn't leave the team.");
+      setTeamError("Couldn't leave the guild.");
     }
   }
 
@@ -1290,10 +1290,15 @@ function Panel({ children, className = "" }) {
 // that reads as "proportions feel off" even when nothing is actually
 // broken. `badge` is optional since Fundamentals Practice rows are all
 // the same tier and don't need one.
+//
+// These are divider rows rather than bordered cards because every list
+// now sits inside a Panel -- a bordered card inside a bordered card
+// reads as heavy, doubled chrome. The Panel is the box; rows just
+// divide it.
 function TaskRow({ title, points, badge, onClick }) {
   return (
     <button onClick={onClick}
-      className="w-full flex items-center justify-between border-2 border-sand-300 bg-white rounded-xl px-4 py-3 text-left hover:border-brand-400 transition-colors">
+      className="w-full flex items-center justify-between py-2.5 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 transition-colors">
       <div>
         <div className="font-display font-normal text-sm text-sand-800">{title}</div>
         {badge && <div className="mt-1">{badge}</div>}
@@ -1302,6 +1307,13 @@ function TaskRow({ title, points, badge, onClick }) {
     </button>
   );
 }
+
+// Display labels are kept out of the tab keys so a label can carry a
+// space ("QUEST LOG") without the key -- which is state, and compared
+// all over KidView -- having to change with it.
+const KID_TAB_LABELS = {
+  quest: "QUEST", learn: "LEARN", history: "QUEST LOG", guild: "GUILD", me: "ME",
+};
 
 // Replaces the old RoleSelect (tap-your-name-from-a-list) + PinGate --
 // there's no more public list of a family's kids to tap through (that
@@ -1400,15 +1412,13 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
   const pending = kidSubmissions.filter(s => s.status === "pending");
   const approved = kidSubmissions.filter(s => s.status === "approved");
 
-  const tabCount = { history: pending.length };
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <div className="flex gap-0 sm:gap-1 mb-6 text-[11px] sm:text-sm overflow-x-auto">
-        {["quest", "learn", "history", "community", "me"].map(key => (
+        {["quest", "learn", "history", "guild", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
             className={"px-1.5 sm:px-3 py-2 rounded-t-xl border-b-2 font-bold whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
-            {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
+            {KID_TAB_LABELS[key]}
           </button>
         ))}
       </div>
@@ -1418,19 +1428,23 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
           <div className="mb-4 font-sans text-xs text-sand-500 flex items-center gap-2">
             <IconTerminal size={13} /> Every chest is sealed with a puzzle. Write the code, break the seal.
           </div>
-          <Section label="SEALED CHESTS">
+          <Panel>
+            <div className="text-xs text-sand-600 tracking-widest mb-3">SEALED CHESTS</div>
             <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
-          </Section>
+          </Panel>
         </div>
       )}
 
       {tab === "learn" && (
         fundamentals.length > 0 ? (
-          <Section label="FUNDAMENTALS PRACTICE">
+          <Panel>
+            <div className="text-xs text-sand-600 tracking-widest mb-3">FUNDAMENTALS PRACTICE</div>
             <FundamentalsPractice kidId={kid.id} tasks={fundamentals} onSubmit={onSubmit} />
-          </Section>
+          </Panel>
         ) : (
-          <div className="font-sans text-sm text-sand-500 py-6 text-center">Nothing left to practice right now -- nice work.</div>
+          <Panel>
+            <div className="font-sans text-sm text-sand-500 py-2 text-center">Nothing left to practice right now -- nice work.</div>
+          </Panel>
         )
       )}
 
@@ -1438,8 +1452,8 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
         <HistoryPanel kidId={kid.id} kidTasks={kidTasks} pending={pending} approved={approved} onSubmit={onSubmit} />
       )}
 
-      {tab === "community" && (
-        <CommunityPanel team={team} teamError={teamError}
+      {tab === "guild" && (
+        <GuildPanel team={team} teamError={teamError}
           onCreateTeam={onCreateTeam} onJoinTeam={onJoinTeam} onLeaveTeam={onLeaveTeam} />
       )}
 
@@ -1530,27 +1544,27 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
   const completedGroups = groupBy(approved, s => categoryOf(kidTasks.find(t => t.id === s.taskId)));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {drafts.length > 0 && (
-        <div>
-          <div className="text-xs text-sand-600 tracking-widest mb-2">SAVED (UNFINISHED)</div>
+        <Panel>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">SAVED (UNFINISHED)</div>
           {CATEGORY_ORDER.filter(cat => draftGroups[cat]).map(cat => (
             <CategoryGroup key={cat} title={cat} count={draftGroups[cat].length} defaultOpen={true}>
               {draftGroups[cat].map(({ task, draft }) => (
                 <button key={task.id} onClick={() => startResume(task, draft)}
-                  className="w-full flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 rounded-xl">
+                  className="w-full flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30">
                   <span className="font-semibold text-sand-800 text-sm">{task.title}</span>
                   <span className="text-xs text-gold-700">Resume</span>
                 </button>
               ))}
             </CategoryGroup>
           ))}
-        </div>
+        </Panel>
       )}
 
       {pending.length > 0 && (
-        <div>
-          <div className="text-xs text-sand-600 tracking-widest mb-2">WAITING FOR REVIEW</div>
+        <Panel>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">WAITING FOR REVIEW</div>
           {CATEGORY_ORDER.filter(cat => pendingGroups[cat]).map(cat => (
             <CategoryGroup key={cat} title={cat} count={pendingGroups[cat].length} defaultOpen={true}>
               {pendingGroups[cat].map(s => (
@@ -1561,12 +1575,12 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
               ))}
             </CategoryGroup>
           ))}
-        </div>
+        </Panel>
       )}
 
       {approved.length > 0 && (
-        <div>
-          <div className="text-xs text-sand-600 tracking-widest mb-2">COMPLETED ({approved.length})</div>
+        <Panel>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">COMPLETED ({approved.length})</div>
           {CATEGORY_ORDER.filter(cat => completedGroups[cat]).map(cat => (
             <CategoryGroup key={cat} title={cat} count={completedGroups[cat].length} defaultOpen={false}>
               <div className="grid grid-cols-3 gap-2">
@@ -1586,11 +1600,13 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
               </div>
             </CategoryGroup>
           ))}
-        </div>
+        </Panel>
       )}
 
       {drafts.length === 0 && pending.length === 0 && approved.length === 0 && (
-        <div className="font-sans text-sm text-sand-500 py-6 text-center">Nothing here yet -- finish or save a task and it'll show up.</div>
+        <Panel>
+          <div className="font-sans text-sm text-sand-500 py-2 text-center">Nothing here yet -- finish or save a task and it'll show up.</div>
+        </Panel>
       )}
 
       {activeTask && (
@@ -1612,7 +1628,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
 // another family's data (just a handle + a points total, nothing else).
 // Joining while already on a team asks for confirmation first so a
 // mistyped code doesn't silently bump you out of a team you like.
-function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam }) {
+function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam }) {
   const [name, setName] = useState("");
   const [goalPoints, setGoalPoints] = useState(100);
   const [joinCode, setJoinCode] = useState("");
@@ -1641,17 +1657,17 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
       <div className="space-y-4">
         {teamError && <div className="text-sm text-brick-700">{teamError}</div>}
         <Panel>
-          <div className="text-xs text-sand-600 tracking-widest mb-3">JOIN A TEAM</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">JOIN A GUILD</div>
           <div className="flex gap-2">
-            <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Team code"
+            <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Guild code"
               className="flex-1 bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-2 text-sm font-mono uppercase" />
             <button onClick={attemptJoin} className="bg-brand-500 hover:bg-brand-400 text-sand-900 font-semibold rounded-xl px-4 text-sm transition-colors">Join</button>
           </div>
         </Panel>
         <Panel>
-          <div className="text-xs text-sand-600 tracking-widest mb-3">START A TEAM</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">START A GUILD</div>
           <div className="space-y-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name"
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Guild name"
               className="w-full bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-2 text-sm" />
             <div className="flex items-center gap-2">
               <span className="text-xs text-sand-500">Goal:</span>
@@ -1659,7 +1675,7 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
                 className="w-24 bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-1.5 text-sm" />
               <span className="text-xs text-sand-500">points</span>
             </div>
-            <button onClick={attemptCreate} className="w-full bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">Create Team</button>
+            <button onClick={attemptCreate} className="w-full bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">Create Guild</button>
           </div>
         </Panel>
       </div>
@@ -1691,12 +1707,12 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
           </div>
         ))}
       </Panel>
-      <button onClick={onLeaveTeam} className="w-full bg-brick-200 hover:bg-brick-400 text-brick-700 font-semibold rounded-xl py-2 text-sm transition-colors">Leave Team</button>
+      <button onClick={onLeaveTeam} className="w-full bg-brick-200 hover:bg-brick-400 text-brick-700 font-semibold rounded-xl py-2 text-sm transition-colors">Leave Guild</button>
 
       {confirmSwitch && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
           <div className="bg-sand-200 border border-sand-400 rounded-lg p-5 max-w-sm">
-            <div className="text-sm text-sand-800 mb-4">You're already on team "{team.name}" -- switch to the new one instead?</div>
+            <div className="text-sm text-sand-800 mb-4">You're already in guild "{team.name}" -- switch to the new one instead?</div>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmSwitch(null)} className="text-sm text-sand-600 hover:text-sand-800">Cancel</button>
               <button onClick={confirmYes} className="text-sm bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl px-3 py-1.5">Yes, switch</button>
@@ -1884,15 +1900,6 @@ function TopBar({ onBack, label, backLabel = "Switch" }) {
       <div className="text-xs tracking-widest text-gold-700 flex items-center gap-1">
         <IconTerminal size={13} /> {label}
       </div>
-    </div>
-  );
-}
-
-function Section({ label, children }) {
-  return (
-    <div className="mb-6">
-      <div className="text-xs text-sand-500 tracking-widest mb-2">{label}</div>
-      {children}
     </div>
   );
 }
@@ -2489,7 +2496,7 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
             <div>
               <div className="text-sm text-sand-700">{kid.name}</div>
               <div className="text-xs text-brand-700">Login ID: {kid.handle}</div>
-              {kid.teamName && <div className="text-xs text-sand-500">Team: {kid.teamName}</div>}
+              {kid.teamName && <div className="text-xs text-sand-500">Guild: {kid.teamName}</div>}
             </div>
           </div>
           <label className="text-xs text-sand-600 block mb-1">Photo</label>
