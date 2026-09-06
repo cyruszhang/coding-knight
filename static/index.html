@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Jersey+10&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   // Must come AFTER the CDN script (which is what defines window.tailwind
@@ -19,18 +19,16 @@
   //
   // "Cozy Pixel Garden" palette + type, picked from a 4-concept mockup
   // (see /pixel_concepts artifact from that session) -- warm cream
-  // ground, terracotta/sage/mustard accents, Jersey 10 (a pixel-style
-  // display face -- swapped in for Silkscreen, which read too heavy/
-  // blocky next to plain text at real task-title lengths) for
-  // chrome/labels/buttons, Inter kept for actual sentences (task
-  // briefs, explanations) since a pixel font hurts legibility at
-  // paragraph lengths.
+  // ground, terracotta/sage/mustard accents, Silkscreen (a pixel-style
+  // display face) for chrome/labels/titles/buttons, Inter kept for
+  // actual sentences (task briefs, explanations) since a pixel font
+  // hurts legibility at paragraph lengths.
   tailwind.config = {
     theme: {
       extend: {
         fontFamily: {
           sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
-          display: ["Jersey 10", "ui-monospace", "monospace"],
+          display: ["Silkscreen", "ui-monospace", "monospace"],
         },
         colors: {
           // sage green -- primary actions
@@ -84,21 +82,17 @@
   body { margin: 0; -webkit-tap-highlight-color: transparent; font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: #E4D3B4; border-radius: 3px; }
-  /* "Cozy Pixel Garden" type system -- deliberately narrow, after the
-     first pass (pixel font on every button/title/.font-semibold) read
-     as incoherent: a task title in pixel font next to a button in
-     plain Inter looked like two different apps, and .font-semibold
-     was doing double duty for both "big stat number" (wants pixel)
-     and "task/team/kid title" (wants normal, highly-legible text).
-     The rule now: pixel font ONLY for the brand wordmark, the one H1
-     hero heading, short ALL-CAPS tracked eyebrow labels, and standalone
-     stat numerals (font-bold is otherwise unused in this app except
-     for exactly those numbers). Everything else -- buttons, titles,
-     names, body text -- stays in Inter, which already carries its own
-     weight scale (font-semibold/font-bold on Inter reads as normal
-     bold text, not a font change). */
-  h1, h2, h3, .font-bold, [class*="tracking-"] {
-    font-family: "Jersey 10", ui-monospace, monospace;
+  /* "Cozy Pixel Garden" type system: Silkscreen carries all the UI
+     "voice" -- headings, the brand wordmark, ALL-CAPS tracked eyebrow
+     labels, stat numerals, and every title and button label. Inter is
+     reserved for text that's genuinely read as sentences (task briefs,
+     explanations, code, helper copy), where a pixel font hurts
+     legibility at paragraph length.
+     Note on sizing: Silkscreen's glyphs are wide but sit shorter in
+     the em box than Inter's, so sizes are tuned per-role below rather
+     than shared with the body scale -- see TopBanner/tab bar. */
+  button, h1, h2, h3, .font-semibold, .font-bold, [class*="tracking-"] {
+    font-family: "Silkscreen", ui-monospace, monospace;
   }
   /* Flat "plop" press feedback -- only on buttons with an actual fill
      color (a bg-* utility). Text-style buttons (tab bar, "Back") have
@@ -818,7 +812,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
 
   return (
     <div>
-      <div className="flex gap-1 mb-4 border-2 border-sand-300 bg-white rounded-xl p-1 text-sm">
+      <div className="flex gap-1 mb-4 border-2 border-sand-300 bg-white rounded-xl p-1 text-xs">
         <button onClick={() => setMode("boxes")}
           className={"flex-1 rounded-lg py-1.5 font-semibold transition-colors " + (mode === "boxes" ? "bg-brand-500 text-sand-900" : "text-sand-500 hover:text-sand-700")}>
           Mystery Boxes
@@ -860,7 +854,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
               <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
                 className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
                 <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
-                <span className="text-xs text-sand-500 tracking-widest">MYSTERY QUEST</span>
+                <span className="text-[10px] text-sand-500 tracking-wide">MYSTERY QUEST</span>
               </button>
             ))}
           </div>
@@ -1286,7 +1280,7 @@ function TaskRow({ title, points, badge, onClick }) {
     <button onClick={onClick}
       className="w-full flex items-center justify-between border-2 border-sand-300 bg-white rounded-xl px-4 py-3 text-left hover:border-brand-400 transition-colors">
       <div>
-        <div className="font-semibold text-sand-900">{title}</div>
+        <div className="font-semibold text-sm text-sand-900">{title}</div>
         {badge && <div className="mt-1">{badge}</div>}
       </div>
       <span className="text-brand-700 text-sm flex items-center gap-1 shrink-0"><IconStar size={12} />{points}</span>
@@ -1395,10 +1389,10 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <div className="flex gap-1 mb-6 text-base overflow-x-auto">
+      <div className="flex gap-0.5 mb-6 text-xs overflow-x-auto">
         {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-2 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-2 py-2 rounded-t-xl border-b-2 whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
@@ -1842,7 +1836,7 @@ function TopBanner() {
     <div className="w-full bg-white border-b-2 border-sand-300 py-3 mb-6">
       <div className="max-w-2xl mx-auto px-4 flex items-center justify-center gap-2">
         <img src="/turtle-knight.svg" alt="" className="w-7 h-7" />
-        <span className="text-brick-600 text-lg tracking-[0.15em]">CODE QUEST</span>
+        <span className="text-brick-600 text-base font-bold tracking-[0.1em]">CODE QUEST</span>
       </div>
     </div>
   );
@@ -2133,10 +2127,10 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
           Add your first kid in the Settings tab to get started.
         </div>
       )}
-      <div className="flex gap-1 mb-6 text-base overflow-x-auto">
+      <div className="flex gap-0.5 mb-6 text-xs overflow-x-auto">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-2 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-2 py-2 rounded-t-xl border-b-2 whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
