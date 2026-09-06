@@ -845,7 +845,8 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
               const d = DIFFICULTY[task.difficulty];
               return (
                 <TaskRow key={task.id} title={task.title} points={task.points}
-                  badge={<span className="text-xs px-2 py-0.5 rounded-full inline-block" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>}
+                  vehicle={task.vehicle} difficulty={task.difficulty}
+                  badge={<span className="text-[10px] px-2 py-0.5 rounded-full inline-block" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>}
                   onClick={() => { setOpenedIndex(null); startTask(task); }} />
               );
             })}
@@ -973,7 +974,8 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
     <div>
       <div className="grid gap-2">
         {ordered.map(task => (
-          <TaskRow key={task.id} title={task.title} points={task.points} onClick={() => startTask(task)} />
+          <TaskRow key={task.id} title={task.title} points={task.points}
+            vehicle={task.vehicle} difficulty={task.difficulty} onClick={() => startTask(task)} />
         ))}
       </div>
 
@@ -1295,14 +1297,25 @@ function Panel({ children, className = "" }) {
 // now sits inside a Panel -- a bordered card inside a bordered card
 // reads as heavy, doubled chrome. The Panel is the box; rows just
 // divide it.
-function TaskRow({ title, points, badge, onClick }) {
+//
+// The sigil tile carries two things the lists otherwise never showed:
+// which kind of task it is (a drawing vs a set of test cases -- the
+// difference between the two editors a kid lands in), and how hard it
+// is, via the tile's tint. That's why a plain title-and-points row read
+// as featureless: it was showing one of the four facts a task has.
+function TaskRow({ title, points, badge, vehicle, difficulty, onClick }) {
+  const d = DIFFICULTY[difficulty] || DIFFICULTY.easy;
+  const isJudge = vehicle === "judge";
   return (
     <button onClick={onClick}
-      className="w-full flex items-center justify-between py-2.5 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 transition-colors">
-      <div>
-        <div className="font-display font-normal text-sm text-sand-800">{title}</div>
-        {badge && <div className="mt-1">{badge}</div>}
-      </div>
+      className="w-full flex items-center gap-3 py-2.5 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 transition-colors">
+      <span aria-hidden="true"
+        className="shrink-0 w-8 h-8 rounded-lg border-2 flex items-center justify-center text-sm"
+        style={{ color: d.color, borderColor: d.color + "55", background: d.color + "14" }}>
+        {isJudge ? "⌘" : "◈"}
+      </span>
+      <span className="font-display font-normal text-sm text-sand-800 min-w-0 flex-1">{title}</span>
+      {badge && <span className="shrink-0">{badge}</span>}
       <span className="text-brand-700 text-sm flex items-center gap-1 shrink-0"><IconStar size={12} />{points}</span>
     </button>
   );
