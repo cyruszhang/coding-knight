@@ -707,12 +707,18 @@ function clearDraft(kidId, taskId) {
   try { localStorage.removeItem(draftKey(kidId, taskId)); } catch (e) {}
 }
 
-function MysteryBox({ size = 84 }) {
-  return <img src="/mystery-chest.png" alt="" style={{ width: size }} className="h-auto" />;
+// Recoloured from the one chest artwork (see scratchpad generator): only
+// the body hue differs, so the gold fittings and teal <> stay constant
+// and every chest still reads as the same object.
+const CHEST_VARIANTS = ["red", "sage", "teal", "blue", "purple", "rose"];
+
+function MysteryBox({ variant = "red", size = 84 }) {
+  return <img src={"/mystery-chest-" + variant + ".png"} alt="" style={{ width: size }} className="h-auto" />;
 }
 
 function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit }) {
   const [boxes, setBoxes] = useState(() => pickMysteryTasks(available, kidTasks, kidSubmissions));
+  const [variants, setVariants] = useState(() => shuffle(CHEST_VARIANTS).slice(0, boxes.length));
   const [openedIndex, setOpenedIndex] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
@@ -764,6 +770,11 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
     }
     setDeclinedIds(nextDeclined);
     setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task, tier: b.tier } : b)));
+    setVariants(prev => {
+      const usedElsewhere = prev.filter((_, i) => i !== index);
+      const fresh = shuffle(CHEST_VARIANTS.filter(v => !usedElsewhere.includes(v)))[0] || shuffle(CHEST_VARIANTS)[0];
+      return prev.map((v, i) => (i === index ? fresh : v));
+    });
     setOpenedIndex(null);
   }
 
@@ -830,7 +841,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
             {boxes.map((b, i) => b.task && (
               <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
                 className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
-                <MysteryBox />
+                <MysteryBox variant={variants[i] || CHEST_VARIANTS[0]} />
                 <span className="text-[10px] text-sand-500 tracking-wide">MYSTERY QUEST</span>
               </button>
             ))}
