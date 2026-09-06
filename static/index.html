@@ -1395,7 +1395,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <div className="flex gap-1 mb-6 text-sm overflow-x-auto">
+      <div className="flex gap-1 mb-6 text-base overflow-x-auto">
         {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
             className={"px-3 py-2 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
@@ -1842,7 +1842,7 @@ function TopBanner() {
     <div className="w-full bg-white border-b-2 border-sand-300 py-3 mb-6">
       <div className="max-w-2xl mx-auto px-4 flex items-center justify-center gap-2">
         <img src="/turtle-knight.svg" alt="" className="w-7 h-7" />
-        <span className="text-brick-600 text-sm tracking-[0.2em]">CODE QUEST</span>
+        <span className="text-brick-600 text-lg tracking-[0.15em]">CODE QUEST</span>
       </div>
     </div>
   );
@@ -2133,7 +2133,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
           Add your first kid in the Settings tab to get started.
         </div>
       )}
-      <div className="flex gap-1 mb-6 text-sm overflow-x-auto">
+      <div className="flex gap-1 mb-6 text-base overflow-x-auto">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
             className={"px-3 py-2 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
