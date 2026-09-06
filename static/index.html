@@ -2215,8 +2215,6 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
   const tabCount = { review: pending.length, suggestions: suggestions.length };
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <TopBar onBack={onBack} label="PARENT" />
-      {familyName && <div className="text-xs text-sand-500 -mt-4 mb-4">{familyName}</div>}
       {kids.length === 0 && (
         <div className="mb-4 text-sm text-gold-700 bg-gold-500/10 border border-gold-400/30 rounded-xl px-3 py-2">
           Add your first kid in the Settings tab to get started.
@@ -2234,7 +2232,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
       {tab === "suggestions" && <SuggestionsTab suggestions={suggestions} kids={kids} onApprove={onApproveSuggestion} onReject={onRejectSuggestion} />}
       {tab === "tasks" && <TasksTab tasks={tasks} kids={kids} onAddTask={onAddTask} onDeleteTask={onDeleteTask} />}
       {tab === "history" && <HistoryTab submissions={submissions} redemptions={redemptions} kids={kids} />}
-      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKid={onUpdateKid} onAddKid={onAddKid} />}
+      {tab === "settings" && <SettingsTab settings={settings} kids={kids} onUpdateSettings={onUpdateSettings} onUpdateKid={onUpdateKid} onAddKid={onAddKid} familyName={familyName} onLogout={onBack} />}
     </div>
   );
 }
@@ -2500,7 +2498,7 @@ function HistoryTab({ submissions, redemptions, kids }) {
   );
 }
 
-function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }) {
+function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid, familyName, onLogout }) {
   const [local, setLocal] = useState(settings);
   const [kidPins, setKidPins] = useState({});
   const [kidAvatars, setKidAvatars] = useState({});
@@ -2538,6 +2536,12 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
 
   return (
     <Panel className="grid gap-4 max-w-sm">
+      {familyName && (
+        <div className="border-b border-sand-300/50 pb-3">
+          <div className="text-xs text-sand-600 tracking-widest mb-1">FAMILY</div>
+          <div className="text-sand-800">{familyName}</div>
+        </div>
+      )}
       <div>
         <label className="font-sans text-xs text-sand-600 block mb-1">Points per minute of screen time</label>
         <input type="number" value={local.pointsPerMinute} onChange={(e) => setLocal({ ...local, pointsPerMinute: Number(e.target.value) })}
@@ -2588,6 +2592,7 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
           <button onClick={addKid} className="bg-brand-400 text-sand-900 font-semibold rounded-xl px-3 text-sm">Add</button>
         </div>
       </div>
+      <button onClick={onLogout} className="w-full bg-sand-300 hover:bg-sand-400 text-sand-800 font-semibold rounded-xl py-2 text-sm transition-colors">Log out</button>
     </Panel>
   );
 }
