@@ -69,8 +69,8 @@
              syntaxHighlighting, defaultHighlightStyle, HighlightStyle, tags };
   })();
 </script>
-<link rel="icon" type="image/svg+xml" href="/turtle-knight.svg">
-<link rel="apple-touch-icon" href="/turtle-knight.svg">
+<link rel="icon" type="image/png" href="/turtle-knight.png">
+<link rel="apple-touch-icon" href="/turtle-knight.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
@@ -707,30 +707,12 @@ function clearDraft(kidId, taskId) {
   try { localStorage.removeItem(draftKey(kidId, taskId)); } catch (e) {}
 }
 
-const BOX_VARIANTS = [
-  { lid: "#C9A876", body: "#8F7349" },
-  { lid: "#7FA89F", body: "#486E68" },
-  { lid: "#C08282", body: "#8A5252" },
-  { lid: "#A08CC0", body: "#6B5987" },
-  { lid: "#8FA8C9", body: "#4F6B8A" },
-  { lid: "#D4C17A", body: "#A6924F" },
-];
-
-function MysteryBox({ variant, size = 88 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100">
-      <rect x="18" y="42" width="64" height="42" rx="4" fill={variant.body} />
-      <rect x="14" y="30" width="72" height="16" rx="3" fill={variant.lid} />
-      <rect x="44" y="30" width="12" height="54" fill={variant.body} opacity="0.85" />
-      <rect x="14" y="36" width="72" height="6" fill={variant.body} opacity="0.85" />
-      <text x="50" y="68" textAnchor="middle" fontSize="26" fontWeight="bold" fill="white" opacity="0.9">?</text>
-    </svg>
-  );
+function MysteryBox({ size = 84 }) {
+  return <img src="/mystery-chest.png" alt="" style={{ width: size }} className="h-auto" />;
 }
 
 function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit }) {
   const [boxes, setBoxes] = useState(() => pickMysteryTasks(available, kidTasks, kidSubmissions));
-  const [variants, setVariants] = useState(() => shuffle(BOX_VARIANTS).slice(0, boxes.length));
   const [openedIndex, setOpenedIndex] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
@@ -782,11 +764,6 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
     }
     setDeclinedIds(nextDeclined);
     setBoxes(boxes.map((b, i) => (i === index ? { task: replacement || b.task, tier: b.tier } : b)));
-    setVariants(prev => {
-      const usedElsewhere = prev.filter((_, i) => i !== index);
-      const fresh = shuffle(BOX_VARIANTS.filter(v => !usedElsewhere.includes(v)))[0] || shuffle(BOX_VARIANTS)[0];
-      return prev.map((v, i) => (i === index ? fresh : v));
-    });
     setOpenedIndex(null);
   }
 
@@ -853,7 +830,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
             {boxes.map((b, i) => b.task && (
               <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
                 className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
-                <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
+                <MysteryBox />
                 <span className="text-[10px] text-sand-500 tracking-wide">MYSTERY QUEST</span>
               </button>
             ))}
@@ -1280,7 +1257,7 @@ function TaskRow({ title, points, badge, onClick }) {
     <button onClick={onClick}
       className="w-full flex items-center justify-between border-2 border-sand-300 bg-white rounded-xl px-4 py-3 text-left hover:border-brand-400 transition-colors">
       <div>
-        <div className="font-semibold text-sm text-sand-900">{title}</div>
+        <div className="font-display font-normal text-sm text-sand-800">{title}</div>
         {badge && <div className="mt-1">{badge}</div>}
       </div>
       <span className="text-brand-700 text-sm flex items-center gap-1 shrink-0"><IconStar size={12} />{points}</span>
@@ -1308,7 +1285,7 @@ function AuthLanding({ onKidLogin, kidLoginError }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 gap-10">
       <div className="text-center">
-        <img src="/turtle-knight.svg" alt="Code Quest" className="w-20 h-20 mx-auto mb-3" />
+        <img src="/turtle-knight.png" alt="Code Quest" className="h-24 w-auto mx-auto mb-3 block" />
         <div className="flex items-center justify-center gap-2 text-gold-700 text-xs tracking-[0.3em] mb-2">
           <IconTerminal /> CODE QUEST
         </div>
@@ -1389,10 +1366,10 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <div className="flex gap-0.5 mb-6 text-xs overflow-x-auto">
+      <div className="flex gap-0 sm:gap-1 mb-6 text-[11px] sm:text-sm overflow-x-auto">
         {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-2 py-2 rounded-t-xl border-b-2 whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-1.5 sm:px-3 py-2 rounded-t-xl border-b-2 font-bold whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
@@ -1795,18 +1772,36 @@ function MePanel({ kid, submissions, onLogout, balance, minutesAvailable, maxRed
 // feels consistent whether it's still open or already done. Read-only:
 // reuses RunnableSubmission (snapshot/code/Run/output) with no approve/
 // reject actions, since a completed task has nothing left to decide.
-function CompletedDetail({ submission, onBack }) {
+// Push/pop transition for the full-screen task views: slides in from the
+// right on mount, and back out the same way on dismiss. The exit has to
+// delay the real callback until the transition finishes, otherwise the
+// component unmounts instantly and there's nothing left to animate.
+const SLIDE_MS = 300;
+
+function useSlideIn() {
   const [entered, setEntered] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
     const id = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(id);
   }, []);
+  function leave(done) {
+    setLeaving(true);
+    setTimeout(done, SLIDE_MS);
+  }
+  const slideClass = "transition-transform duration-300 ease-out " +
+    (entered && !leaving ? "translate-x-0" : "translate-x-full");
+  return { slideClass, leave };
+}
+
+function CompletedDetail({ submission, onBack }) {
+  const { slideClass, leave } = useSlideIn();
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div style={GRID_BG}
-        className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
-        <div className="max-w-2xl mx-auto px-4 py-6 pb-16 text-sand-900">
-          <TopBar onBack={onBack} backLabel="Back" label={submission.title.toUpperCase()} />
+      <div style={GRID_BG} className={slideClass}>
+        <TopBanner />
+        <div className="max-w-2xl mx-auto px-4 pb-16 text-sand-900">
+          <TopBar onBack={() => leave(onBack)} backLabel="Back" label={submission.title.toUpperCase()} />
           <Panel className="mb-4">
             <div className="flex items-center justify-between mb-1">
               <div className="font-semibold text-sand-900">{submission.title}</div>
@@ -1835,7 +1830,7 @@ function TopBanner() {
   return (
     <div className="w-full bg-white border-b-2 border-sand-300 py-3 mb-6">
       <div className="max-w-2xl mx-auto px-4 flex items-center justify-center gap-2">
-        <img src="/turtle-knight.svg" alt="" className="w-7 h-7" />
+        <img src="/turtle-knight.png" alt="" className="h-8 w-auto" />
         <span className="text-brick-600 text-base font-bold tracking-[0.1em]">CODE QUEST</span>
       </div>
     </div>
@@ -1871,7 +1866,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState(null);
   const [stopped, setStopped] = useState(false);
-  const [entered, setEntered] = useState(false);
+  const { slideClass, leave } = useSlideIn();
   const [showTip, setShowTip] = useState(false);
   const [testResults, setTestResults] = useState([]);
   const [justSaved, setJustSaved] = useState(false);
@@ -1897,13 +1892,9 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
     ? explanation.trim().length >= 10 && allTestsPassed
     : explanation.trim().length >= 10 && hasRun;
 
-  // Slide in from the right on mount rather than popping up as a dialog —
-  // this is a detail page, not a modal, so it gets the same full-screen
-  // treatment as the rest of the app (opaque GRID_BG, no dimmed backdrop).
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+  // Slide handled by useSlideIn — this is a detail page, not a dialog, so
+  // it gets the same full-screen treatment as the rest of the app (opaque
+  // GRID_BG, no dimmed backdrop).
 
   async function handleRun() {
     setRunning(true);
@@ -1954,10 +1945,10 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div style={GRID_BG}
-        className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
-        <div className="max-w-3xl mx-auto px-4 py-6 pb-16 text-sand-900">
-          <TopBar onBack={onCancel} backLabel="Back" label={task.title.toUpperCase()} />
+      <div style={GRID_BG} className={slideClass}>
+        <TopBanner />
+        <div className="max-w-3xl mx-auto px-4 pb-16 text-sand-900">
+          <TopBar onBack={() => leave(onCancel)} backLabel="Back" label={task.title.toUpperCase()} />
 
           <Panel className="mb-4">
             <div className="font-semibold text-sand-900 mb-1">{task.title}</div>
@@ -2127,10 +2118,10 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
           Add your first kid in the Settings tab to get started.
         </div>
       )}
-      <div className="flex gap-0.5 mb-6 text-xs overflow-x-auto">
+      <div className="flex gap-0 sm:gap-1 mb-6 text-[11px] sm:text-sm overflow-x-auto">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-2 py-2 rounded-t-xl border-b-2 whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-1.5 sm:px-3 py-2 rounded-t-xl border-b-2 font-bold whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
