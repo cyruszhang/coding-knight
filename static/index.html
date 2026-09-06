@@ -91,9 +91,9 @@
     font-family: "Silkscreen", ui-monospace, monospace;
   }
   /* Flat "plop" press feedback -- only on buttons with an actual fill
-     color (a bg-* utility). Text-style buttons (tab bar, "Back",
-     "Leave team") have no background and would just show a shadow
-     floating under bare text, so they're deliberately excluded. */
+     color (a bg-* utility). Text-style buttons (tab bar, "Back") have
+     no background and would just show a shadow floating under bare
+     text, so they're deliberately excluded. */
   button[class*="bg-"]:not(:disabled) {
     box-shadow: 0 3px 0 rgba(51, 40, 34, 0.35);
     transition: transform 0.06s ease, box-shadow 0.06s ease;
@@ -742,6 +742,13 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   // tied-for-least-practiced tasks back into view. Excluding declined
   // ids forces genuinely new content until the whole pool's been seen.
   const [declinedIds, setDeclinedIds] = useState([]);
+  // Mystery boxes are the default (keeps the surprise/reroll loop), but
+  // some kids would rather just see everything and pick -- this is a
+  // plain, paginated list of the same `available` pool, sharing the
+  // same startTask/SubmitModal machinery below.
+  const [mode, setMode] = useState("boxes");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 8;
 
   // Among the active task's own tagged skills, the one the kid has the
   // least submission history for -- ties the tip to the code they're
@@ -792,23 +799,68 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
     saveDraft(kidId, activeTask.id, { code, explanation, pasted });
   }, [code, explanation, pasted, activeTask, kidId]);
 
-  if (boxes.length === 0 || !boxes.some(b => b.task)) {
+  if (available.length === 0) {
     return <div className="text-sand-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
   }
 
+  const totalPages = Math.max(1, Math.ceil(available.length / PAGE_SIZE));
+  const pageItems = available.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
   return (
     <div>
-      <div className="grid grid-cols-3 gap-3">
-        {boxes.map((b, i) => b.task && (
-          <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
-            className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
-            <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
-            <span className="text-xs text-sand-500">MYSTERY QUEST</span>
-          </button>
-        ))}
+      <div className="flex gap-2 mb-4 text-xs">
+        <button onClick={() => setMode("boxes")}
+          className={"px-3 py-1.5 rounded-full border-2 " + (mode === "boxes" ? "border-brand-500 bg-brand-200 text-sand-900" : "border-sand-300 text-sand-600")}>
+          Mystery Boxes
+        </button>
+        <button onClick={() => { setMode("list"); setPage(0); }}
+          className={"px-3 py-1.5 rounded-full border-2 " + (mode === "list" ? "border-brand-500 bg-brand-200 text-sand-900" : "border-sand-300 text-sand-600")}>
+          Browse All ({available.length})
+        </button>
       </div>
 
-      {openedIndex !== null && boxes[openedIndex] && boxes[openedIndex].task && (
+      {mode === "list" && (
+        <div>
+          <div className="space-y-2">
+            {pageItems.map(task => {
+              const d = DIFFICULTY[task.difficulty];
+              return (
+                <button key={task.id} onClick={() => { setOpenedIndex(null); startTask(task); }}
+                  className="w-full flex items-center justify-between border-2 border-sand-300 bg-white rounded-xl px-4 py-3 text-left hover:border-brand-400 transition-colors">
+                  <div>
+                    <div className="font-semibold text-sand-900">{task.title}</div>
+                    <span className="text-xs px-2 py-0.5 rounded-full inline-block mt-1" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
+                  </div>
+                  <span className="text-brand-700 text-sm flex items-center gap-1 shrink-0"><IconStar size={12} />{task.points}</span>
+                </button>
+              );
+            })}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm">
+              <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                className="px-3 py-1.5 rounded-xl border-2 border-sand-300 text-sand-600 disabled:opacity-30">← Prev</button>
+              <span className="text-xs text-sand-500">Page {page + 1} of {totalPages}</span>
+              <button disabled={page === totalPages - 1} onClick={() => setPage(p => p + 1)}
+                className="px-3 py-1.5 rounded-xl border-2 border-sand-300 text-sand-600 disabled:opacity-30">Next →</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "boxes" && (
+        <div>
+          <div className="grid grid-cols-3 gap-3">
+            {boxes.map((b, i) => b.task && (
+              <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
+                className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
+                <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
+                <span className="text-xs text-sand-500">MYSTERY QUEST</span>
+              </button>
+            ))}
+          </div>
+
+          {openedIndex !== null && boxes[openedIndex] && boxes[openedIndex].task && (
         <div className="mt-4">
           <Panel>
             {(() => {
@@ -841,13 +893,20 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
             })()}
           </Panel>
         </div>
+          )}
+        </div>
       )}
 
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
           code={code} setCode={setCode} onPasteDetected={() => setPasted(true)} tip={activeTip}
           onSave={() => saveDraft(kidId, activeTask.id, { code, explanation, pasted })}
-          onCancel={() => { rerollSlot(openedIndex); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); }}
+          onCancel={() => {
+            // Only a box-picker task (not one started from the plain
+            // list) has a slot to reroll.
+            if (openedIndex !== null) rerollSlot(openedIndex);
+            setActiveTask(null); setExplanation(""); setCode(""); setPasted(false);
+          }}
           onSubmit={(snapshot) => { clearDraft(kidId, activeTask.id); onSubmit(activeTask.id, explanation, code, snapshot, pasted); setActiveTask(null); setExplanation(""); setCode(""); setPasted(false); setOpenedIndex(null); }} />
       )}
     </div>
@@ -1369,6 +1428,22 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 // categories the Quest and Learn tabs already use. Reuses SubmitModal
 // (to resume a draft) and CompletedDetail (to review finished work)
 // rather than building new viewers for either.
+// Collapsed by default for an archive-y list (completed work); the
+// caller decides per-section since "saved" and "pending" are usually
+// small and worth seeing right away, while "completed" only grows.
+function CategoryGroup({ title, count, defaultOpen, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mb-3">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between text-xs text-sand-500 mb-1 py-1">
+        <span>{title} ({count})</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
 function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
   const [viewingCompleted, setViewingCompleted] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
@@ -1430,8 +1505,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
         <div>
           <div className="text-xs text-sand-600 tracking-widest mb-2">SAVED (UNFINISHED)</div>
           {CATEGORY_ORDER.filter(cat => draftGroups[cat]).map(cat => (
-            <div key={cat} className="mb-3">
-              <div className="text-xs text-sand-500 mb-1">{cat}</div>
+            <CategoryGroup key={cat} title={cat} count={draftGroups[cat].length} defaultOpen={true}>
               {draftGroups[cat].map(({ task, draft }) => (
                 <button key={task.id} onClick={() => startResume(task, draft)}
                   className="w-full flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 rounded-xl">
@@ -1439,7 +1513,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
                   <span className="text-xs text-gold-700">Resume</span>
                 </button>
               ))}
-            </div>
+            </CategoryGroup>
           ))}
         </div>
       )}
@@ -1448,15 +1522,14 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
         <div>
           <div className="text-xs text-sand-600 tracking-widest mb-2">WAITING FOR REVIEW</div>
           {CATEGORY_ORDER.filter(cat => pendingGroups[cat]).map(cat => (
-            <div key={cat} className="mb-3">
-              <div className="text-xs text-sand-500 mb-1">{cat}</div>
+            <CategoryGroup key={cat} title={cat} count={pendingGroups[cat].length} defaultOpen={true}>
               {pendingGroups[cat].map(s => (
                 <div key={s.id} className="flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0">
                   <span className="text-sand-700 text-sm">{s.title}</span>
                   <span className="text-xs text-gold-700 flex items-center gap-1"><IconClock size={12} /> pending</span>
                 </div>
               ))}
-            </div>
+            </CategoryGroup>
           ))}
         </div>
       )}
@@ -1465,8 +1538,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
         <div>
           <div className="text-xs text-sand-600 tracking-widest mb-2">COMPLETED ({approved.length})</div>
           {CATEGORY_ORDER.filter(cat => completedGroups[cat]).map(cat => (
-            <div key={cat} className="mb-3">
-              <div className="text-xs text-sand-500 mb-1">{cat}</div>
+            <CategoryGroup key={cat} title={cat} count={completedGroups[cat].length} defaultOpen={false}>
               <div className="grid grid-cols-3 gap-2">
                 {completedGroups[cat].map(s => (
                   <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
@@ -1482,7 +1554,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
                   </button>
                 ))}
               </div>
-            </div>
+            </CategoryGroup>
           ))}
         </div>
       )}
@@ -1589,7 +1661,7 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
           </div>
         ))}
       </Panel>
-      <button onClick={onLeaveTeam} className="text-xs text-sand-500 hover:text-brick-700">Leave team</button>
+      <button onClick={onLeaveTeam} className="w-full bg-brick-200 hover:bg-brick-400 text-brick-700 font-semibold rounded-xl py-2 text-sm transition-colors">Leave Team</button>
 
       {confirmSwitch && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
