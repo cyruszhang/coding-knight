@@ -107,4 +107,10 @@ def row_to_redemption(row):
 
 
 def row_to_kid(row):
-    return {"id": row["id"], "name": row["name"], "avatar": row["avatar"], "handle": row["handle"]}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "avatar": row["avatar"],
+        "handle": row["handle"],
+        "birthday": row["birthday"],
+    }

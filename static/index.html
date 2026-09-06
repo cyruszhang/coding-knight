@@ -625,6 +625,35 @@ const DIFFICULTY = {
   fundamentals: { label: "PRACTICE", color: "#6B5B87" },
 };
 
+const MONTH_NAMES = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+  "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+
+// Birthdays are stored as plain "YYYY-MM-DD" calendar dates with no time
+// or zone. new Date("2015-03-14") would parse that as UTC midnight, which
+// is the previous day anywhere west of Greenwich -- so the parts are split
+// by hand and rebuilt as a local date. Everything below then compares
+// local-midnight to local-midnight, so "today" means the kid's today.
+function birthdayInfo(iso) {
+  if (!iso) return null;
+  const [y, m, d] = String(iso).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next = new Date(today.getFullYear(), m - 1, d);
+  if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+  const daysUntil = Math.round((next - today) / 86400000);
+  const turning = next.getFullYear() - y;
+  return {
+    month: m,
+    day: d,
+    daysUntil,
+    turning,
+    // On the day itself they have just turned `turning`; otherwise the
+    // age they've completed is one less than the birthday still ahead.
+    age: daysUntil === 0 ? turning : turning - 1,
+  };
+}
+
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 // ---------- tiny inline icon set (no external icon library needed) ----------
@@ -1741,6 +1770,7 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam }) 
 // already loaded for the Quest/Learn tabs -- no separate fetch needed.
 function MePanel({ kid, submissions, onLogout, balance, minutesAvailable, maxRedeemable, capRemaining, dailyCapMinutes, onRedeem }) {
   const [redeemMinutes, setRedeemMinutes] = useState(15);
+  const birthday = birthdayInfo(kid.birthday);
 
   const days = submissions.map(s => s.submittedAt.slice(0, 10));
   const counts = {};
@@ -1793,6 +1823,22 @@ function MePanel({ kid, submissions, onLogout, balance, minutesAvailable, maxRed
           <div className="text-lg font-semibold text-sand-900">{kid.name}</div>
           <div className="text-xs text-sand-500">Login ID: {kid.handle}</div>
         </div>
+      </Panel>
+
+      <Panel>
+        <div className="text-xs text-sand-600 tracking-widest mb-3">BIRTHDAY</div>
+        {birthday ? (
+          <div className="flex items-baseline justify-between gap-3 flex-wrap">
+            <div className="text-lg text-gold-700">{MONTH_NAMES[birthday.month - 1]} {birthday.day}</div>
+            <div className="text-xs text-sand-500">
+              {birthday.daysUntil === 0
+                ? "\ud83c\udf89 turns " + birthday.turning + " today!"
+                : birthday.age + " years old \u00b7 turns " + birthday.turning + " in " + birthday.daysUntil + (birthday.daysUntil === 1 ? " day" : " days")}
+            </div>
+          </div>
+        ) : (
+          <div className="font-sans text-sm text-sand-500">Not set yet -- ask a grown-up to add it.</div>
+        )}
       </Panel>
 
       <GaugeBar balance={balance} minutesAvailable={minutesAvailable} />
@@ -2458,6 +2504,7 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
   const [local, setLocal] = useState(settings);
   const [kidPins, setKidPins] = useState({});
   const [kidAvatars, setKidAvatars] = useState({});
+  const [kidBirthdays, setKidBirthdays] = useState({});
   const [newKidName, setNewKidName] = useState("");
 
   async function pickAvatar(kidId, file) {
@@ -2472,10 +2519,15 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
       const fields = {};
       if ((kidPins[kid.id] || "").trim()) fields.pin = kidPins[kid.id].trim();
       if (kidAvatars[kid.id]) fields.avatar = kidAvatars[kid.id];
+      const edited = kidBirthdays[kid.id];
+      // Only send it when actually changed -- including cleared to "",
+      // which the server stores as NULL.
+      if (edited !== undefined && edited !== (kid.birthday || "")) fields.birthday = edited;
       if (Object.keys(fields).length > 0) onUpdateKid(kid.id, fields);
     });
     setKidPins({});
     setKidAvatars({});
+    setKidBirthdays({});
   }
 
   function addKid() {
@@ -2515,7 +2567,11 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
           <label className="text-xs text-sand-600 block mb-1">Photo</label>
           <input type="file" accept="image/*" onChange={(e) => pickAvatar(kid.id, e.target.files[0])}
             className="text-xs text-sand-600 mb-3 block w-full file:mr-2 file:py-1 file:px-2 file:rounded-xl file:border-0 file:bg-sand-300 file:text-sand-800 file:text-xs" />
-          <label className="text-xs text-sand-600 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
+          <label className="font-sans text-xs text-sand-600 block mb-1">Birthday</label>
+          <input type="date" value={kidBirthdays[kid.id] !== undefined ? kidBirthdays[kid.id] : (kid.birthday || "")}
+            onChange={(e) => setKidBirthdays({ ...kidBirthdays, [kid.id]: e.target.value })}
+            className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-full mb-3 outline-none focus:border-brand-300" />
+          <label className="font-sans text-xs text-sand-600 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
           <input value={kidPins[kid.id] || ""} onChange={(e) => setKidPins({ ...kidPins, [kid.id]: e.target.value })} placeholder="••••"
             className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
         </div>

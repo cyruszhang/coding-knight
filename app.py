@@ -787,6 +787,9 @@ def init_db():
     _ensure_column(db, "submissions", "pasted", "pasted INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "kids", "pin", "pin TEXT NOT NULL DEFAULT '0000'")
     _ensure_column(db, "kids", "avatar", "avatar TEXT")
+    # Nullable: a kid may not have a birthday recorded, and row_to_kid
+    # reads it unconditionally, so this has to exist before any read.
+    _ensure_column(db, "kids", "birthday", "birthday TEXT")
     # Multi-family additions -- nullable/defaulted so this is safe to run
     # against a DB that hasn't been through migrate_multitenant.py yet
     # (local fresh installs; the one production DB gets migrated
@@ -994,6 +997,15 @@ def create_kid():
     return jsonify(row_to_kid(row)), 201
 
 
+def _valid_birthday(value):
+    """A real calendar date, not just four-dash-two-dash-two."""
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
 @app.route("/api/kids/<kid_id>", methods=["PUT"])
 @require_parent_login
 def update_kid(kid_id):
@@ -1004,6 +1016,13 @@ def update_kid(kid_id):
     # Whitelisted columns, never taken from the request key itself, so
     # interpolating the column name here is safe -- only the value is a
     # bind parameter.
+    if "birthday" in data:
+        birthday = (data.get("birthday") or "").strip()
+        if birthday and not _valid_birthday(birthday):
+            return jsonify({"error": "birthday must be YYYY-MM-DD"}), 400
+        # Empty string clears it rather than storing "", so the kid view
+        # can just test for a falsy value.
+        db.execute("UPDATE kids SET birthday=? WHERE id=?", (birthday or None, kid_id))
     for key in ("pin", "avatar", "name", "handle"):
         if key in data:
             db.execute(f"UPDATE kids SET {key}=? WHERE id=?", (data[key], kid_id))
