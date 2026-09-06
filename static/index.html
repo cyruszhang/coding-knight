@@ -1797,9 +1797,9 @@ function useSlideIn() {
 function CompletedDetail({ submission, onBack }) {
   const { slideClass, leave } = useSlideIn();
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div style={GRID_BG} className={slideClass}>
-        <TopBanner />
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={GRID_BG}>
+      <TopBanner />
+      <div className={slideClass}>
         <div className="max-w-2xl mx-auto px-4 pb-16 text-sand-900">
           <TopBar onBack={() => leave(onBack)} backLabel="Back" label={submission.title.toUpperCase()} />
           <Panel className="mb-4">
@@ -1944,9 +1944,9 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div style={GRID_BG} className={slideClass}>
-        <TopBanner />
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={GRID_BG}>
+      <TopBanner />
+      <div className={slideClass}>
         <div className="max-w-3xl mx-auto px-4 pb-16 text-sand-900">
           <TopBar onBack={() => leave(onCancel)} backLabel="Back" label={task.title.toUpperCase()} />
 
