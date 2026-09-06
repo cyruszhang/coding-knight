@@ -9,24 +9,36 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   // Must come AFTER the CDN script (which is what defines window.tailwind
   // in the first place) -- setting this before it loads just creates an
   // unrelated global that gets discarded, which is why the custom colors
-  // and font silently had no effect the first time. Defines a muted,
-  // deliberately lower-saturation replacement for the stock
-  // teal/amber/red ramps (this app's actual "poppy" colors) rather
-  // than just picking different shades of the same saturated hues.
+  // and font silently had no effect the first time.
+  //
+  // "Cozy Pixel Garden" palette + type, picked from a 4-concept mockup
+  // (see /pixel_concepts artifact from that session) -- warm cream
+  // ground, terracotta/sage/mustard accents, Silkscreen (a pixel-style
+  // display face) for chrome/labels/buttons, Inter kept for actual
+  // sentences (task briefs, explanations) since a pixel font hurts
+  // legibility at paragraph lengths.
   tailwind.config = {
     theme: {
       extend: {
-        fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"] },
+        fontFamily: {
+          sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
+          display: ["Silkscreen", "ui-monospace", "monospace"],
+        },
         colors: {
-          brand: { 200: "#CFE0DC", 300: "#A9C7C0", 400: "#7FA89F", 500: "#5B8A82", 600: "#486E68", 700: "#3A5854" },
-          gold:  { 200: "#EAD9BB", 300: "#DCC195", 400: "#C9A876", 500: "#B08F5C", 600: "#8F7349", 700: "#7A6039", 950: "#3D2F1C" },
-          brick: { 200: "#E3C6C6", 400: "#C08282", 500: "#A66666", 600: "#8A5252", 700: "#764848" },
+          // sage green -- primary actions
+          brand: { 200: "#DCEBD3", 300: "#B9D6A8", 400: "#9BC489", 500: "#7FB069", 600: "#5F8F4C", 700: "#55824A" },
+          // mustard gold -- secondary accents, badges
+          gold:  { 200: "#F5E4BE", 300: "#EFD59A", 400: "#E8B84B", 500: "#D6A53D", 600: "#B3872F", 700: "#8F6D28", 950: "#4A3B1A" },
+          // terracotta -- brand accent text/links AND errors/hard-difficulty (same warm family, double duty)
+          brick: { 200: "#F0D2C4", 400: "#D9876A", 500: "#C15B3F", 600: "#A8482F", 700: "#8A3B27" },
+          // warm cream/tan -- backgrounds, borders, ink (replaces neutral slate throughout)
+          sand:  { 50: "#FBF3E3", 100: "#F5EAD5", 200: "#EEDFC0", 300: "#E4D3B4", 400: "#C7B394", 500: "#A8916F", 600: "#8A7660", 700: "#6B5A48", 800: "#4A3B30", 900: "#332822" },
         },
       },
     },
@@ -64,7 +76,27 @@
 <style>
   body { margin: 0; -webkit-tap-highlight-color: transparent; font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb { background: #E4D3B4; border-radius: 3px; }
+  /* "Cozy Pixel Garden": Silkscreen (pixel-style display face) for
+     chrome -- buttons, eyebrow section labels, titles/names -- kept
+     off actual sentences (task briefs, explanations), which stay in
+     Inter for legibility at paragraph length. Targeting by existing
+     utility classes/tags rather than editing every element by hand. */
+  button, h1, h2, h3, .font-semibold, [class*="tracking-"] {
+    font-family: "Silkscreen", ui-monospace, monospace;
+  }
+  /* Flat "plop" press feedback -- only on buttons with an actual fill
+     color (a bg-* utility). Text-style buttons (tab bar, "Back",
+     "Leave team") have no background and would just show a shadow
+     floating under bare text, so they're deliberately excluded. */
+  button[class*="bg-"]:not(:disabled) {
+    box-shadow: 0 3px 0 rgba(51, 40, 34, 0.35);
+    transition: transform 0.06s ease, box-shadow 0.06s ease;
+  }
+  button[class*="bg-"]:not(:disabled):active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 rgba(51, 40, 34, 0.35);
+  }
 </style>
 </head>
 <body>
@@ -422,8 +454,8 @@ function Editor({ value, onChange, onPasteDetected }) {
 
   return (
     <div>
-      {!ready && <div className="text-xs text-slate-500 p-3 border border-slate-400 rounded-xl bg-slate-200">Loading editor…</div>}
-      <div ref={hostRef} className={"rounded-xl border border-slate-700 focus-within:border-brand-400 overflow-hidden " + (ready ? "" : "hidden")} />
+      {!ready && <div className="text-xs text-sand-500 p-3 border border-sand-400 rounded-xl bg-sand-200">Loading editor…</div>}
+      <div ref={hostRef} className={"rounded-xl border border-sand-700 focus-within:border-brand-400 overflow-hidden " + (ready ? "" : "hidden")} />
     </div>
   );
 }
@@ -540,7 +572,7 @@ const LIBRARY_TIPS = {
 const DEFAULT_SETTINGS = { pointsPerMinute: 1, dailyCapMinutes: 60 };
 
 const GRID_BG = {
-  backgroundColor: "#f7f7f8",
+  backgroundColor: "#FBF3E3",
   minHeight: "100vh",
 };
 
@@ -756,7 +788,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
   }, [code, explanation, pasted, activeTask, kidId]);
 
   if (boxes.length === 0 || !boxes.some(b => b.task)) {
-    return <div className="text-slate-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
+    return <div className="text-sand-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
   }
 
   return (
@@ -766,7 +798,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
           <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
             className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
             <MysteryBox variant={variants[i] || BOX_VARIANTS[0]} />
-            <span className="text-xs text-slate-500">MYSTERY QUEST</span>
+            <span className="text-xs text-sand-500">MYSTERY QUEST</span>
           </button>
         ))}
       </div>
@@ -781,21 +813,21 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
                 <>
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
-                      <div className="font-semibold text-slate-900 mb-1">{task.title}</div>
-                      <div className="text-sm text-slate-600 leading-snug">{task.brief}</div>
+                      <div className="font-semibold text-sand-900 mb-1">{task.title}</div>
+                      <div className="text-sm text-sand-600 leading-snug">{task.brief}</div>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-xs px-1.5 py-0.5 rounded-xl" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
                       <span className="text-brand-700 text-sm flex items-center gap-1"><IconStar size={12} />{task.points}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => startTask(task)}
-                      className="flex-1 bg-brand-500 hover:bg-brand-400 text-slate-900 font-semibold rounded-xl py-2 text-sm transition-colors">
+                      className="flex-1 bg-brand-500 hover:bg-brand-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">
                       Start This Quest
                     </button>
                     <button onClick={() => rerollSlot(openedIndex)}
-                      className="px-3 py-2 rounded-xl text-sm text-slate-600 hover:text-slate-800 border border-slate-400 flex items-center gap-1">
+                      className="px-3 py-2 rounded-xl text-sm text-sand-600 hover:text-sand-800 border border-sand-400 flex items-center gap-1">
                       <IconRedo size={13} /> Put It Back
                     </button>
                   </div>
@@ -864,8 +896,8 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
       <div className="grid gap-2">
         {ordered.map(task => (
           <button key={task.id} onClick={() => startTask(task)}
-            className="flex items-center justify-between border border-slate-300/50 hover:border-brand-300/60 rounded-xl px-3 py-2 text-left transition-colors">
-            <span className="text-sm text-slate-800">{task.title}</span>
+            className="flex items-center justify-between border border-sand-300/50 hover:border-brand-300/60 rounded-xl px-3 py-2 text-left transition-colors">
+            <span className="text-sm text-sand-800">{task.title}</span>
             <span className="text-brand-700 text-xs flex items-center gap-1"><IconStar size={11} />{task.points}</span>
           </button>
         ))}
@@ -1142,7 +1174,7 @@ function App() {
   }
 
   return (
-    <div style={GRID_BG} className="text-slate-900">
+    <div style={GRID_BG} className="text-sand-900">
       {error && (
         <div className="bg-brick-500/20 border-b border-brick-400/40 text-brick-700 text-sm px-4 py-2 flex items-center gap-2">
           <IconAlert /> {error}
@@ -1170,7 +1202,7 @@ function App() {
 
 function Panel({ children, className = "" }) {
   return (
-    <div className={"border border-slate-200 bg-white rounded-2xl shadow-sm p-5 " + className}>
+    <div className={"border-2 border-sand-300 bg-white rounded-xl shadow-[0_3px_0_#E4D3B4] p-5 " + className}>
       {children}
     </div>
   );
@@ -1200,26 +1232,26 @@ function AuthLanding({ onKidLogin, kidLoginError }) {
         <div className="flex items-center justify-center gap-2 text-gold-700 text-xs tracking-[0.3em] mb-2">
           <IconTerminal /> CODE QUEST
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Mission Control</h1>
+        <h1 className="text-3xl font-bold text-sand-900">Mission Control</h1>
       </div>
       <div className="flex gap-6 w-full max-w-md flex-col">
         <Panel className="flex flex-col items-center gap-3 py-6">
           <IconZap size={24} className="text-brand-700" />
-          <span className="text-xs tracking-widest text-slate-700">I'M A KID</span>
+          <span className="text-xs tracking-widest text-sand-700">I'M A KID</span>
           <input value={handle} onChange={(e) => setHandle(e.target.value)}
             placeholder="Your Code Quest ID (e.g. PinkPanther29)" autoCapitalize="none"
-            className="w-full bg-slate-200 border border-slate-400 rounded-xl px-3 py-2 text-center font-mono text-sm outline-none focus:border-brand-300" />
+            className="w-full bg-sand-200 border border-sand-400 rounded-xl px-3 py-2 text-center font-mono text-sm outline-none focus:border-brand-300" />
           <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="PIN"
-            className="w-full bg-slate-200 border border-slate-400 rounded-xl px-3 py-2 text-center tracking-[0.4em] font-mono text-lg outline-none focus:border-brand-300" />
+            className="w-full bg-sand-200 border border-sand-400 rounded-xl px-3 py-2 text-center tracking-[0.4em] font-mono text-lg outline-none focus:border-brand-300" />
           {kidLoginError && <div className="text-brick-700 text-xs text-center">{kidLoginError}</div>}
-          <button onClick={submit} className="w-full bg-brand-400 text-slate-900 font-semibold rounded-xl py-2 text-sm transition-colors">Enter</button>
+          <button onClick={submit} className="w-full bg-brand-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">Enter</button>
         </Panel>
         <a href="/api/auth/google/login" className="block">
           <Panel className="flex flex-col items-center gap-2 py-6 hover:border-gold-400/60 transition-colors">
             <IconLock size={24} className="text-gold-700" />
-            <span className="text-sm tracking-wide text-slate-800">I'M A GROWN-UP</span>
-            <span className="text-xs text-slate-600">Sign in with Google</span>
+            <span className="text-sm tracking-wide text-sand-800">I'M A GROWN-UP</span>
+            <span className="text-xs text-sand-600">Sign in with Google</span>
           </Panel>
         </a>
       </div>
@@ -1233,15 +1265,15 @@ function GaugeBar({ balance, minutesAvailable }) {
     <Panel>
       <div className="flex items-end justify-between mb-3">
         <div>
-          <div className="text-xs text-slate-600 tracking-widest mb-1">POINT BALANCE</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-1">POINT BALANCE</div>
           <div className="text-4xl font-bold text-brand-700">{balance}</div>
         </div>
         <div className="text-right">
-          <div className="text-xs text-slate-600 tracking-widest mb-1">≈ SCREEN TIME</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-1">≈ SCREEN TIME</div>
           <div className="text-2xl font-bold text-gold-700">{minutesAvailable}m</div>
         </div>
       </div>
-      <div className="h-3 bg-slate-200 rounded-full overflow-hidden border border-slate-400/50">
+      <div className="h-3 bg-sand-200 rounded-full overflow-hidden border border-sand-400/50">
         <div className="h-full bg-gradient-to-r from-brand-400 to-gold-400 transition-all duration-500" style={{ width: pct + "%" }} />
       </div>
     </Panel>
@@ -1277,11 +1309,11 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <div className="mb-4 text-sm text-slate-700 tracking-wide">{kid.name.toUpperCase()}</div>
+      <div className="mb-4 text-sm text-sand-700 tracking-wide">{kid.name.toUpperCase()}</div>
       <div className="flex gap-1 mb-6 text-xs">
         {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
@@ -1289,7 +1321,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
       {tab === "quest" && (
         <div>
-          <div className="mb-4 text-xs text-slate-500 flex items-center gap-2">
+          <div className="mb-4 text-xs text-sand-500 flex items-center gap-2">
             <IconTerminal size={13} /> Pick a task, write your code right here, and watch it draw.
           </div>
           <Section label="MYSTERY QUESTS">
@@ -1304,7 +1336,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
             <FundamentalsPractice kidId={kid.id} tasks={fundamentals} onSubmit={onSubmit} />
           </Section>
         ) : (
-          <div className="text-sm text-slate-500 py-6 text-center">Nothing left to practice right now -- nice work.</div>
+          <div className="text-sm text-sand-500 py-6 text-center">Nothing left to practice right now -- nice work.</div>
         )
       )}
 
@@ -1391,14 +1423,14 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
     <div className="space-y-6">
       {drafts.length > 0 && (
         <div>
-          <div className="text-xs text-slate-600 tracking-widest mb-2">SAVED (UNFINISHED)</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-2">SAVED (UNFINISHED)</div>
           {CATEGORY_ORDER.filter(cat => draftGroups[cat]).map(cat => (
             <div key={cat} className="mb-3">
-              <div className="text-xs text-slate-500 mb-1">{cat}</div>
+              <div className="text-xs text-sand-500 mb-1">{cat}</div>
               {draftGroups[cat].map(({ task, draft }) => (
                 <button key={task.id} onClick={() => startResume(task, draft)}
-                  className="w-full flex items-center justify-between py-2 px-2 border-b border-slate-300/50 last:border-0 text-left hover:bg-slate-200/30 rounded-xl">
-                  <span className="text-slate-700 text-sm">{task.title}</span>
+                  className="w-full flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 rounded-xl">
+                  <span className="text-sand-700 text-sm">{task.title}</span>
                   <span className="text-xs text-gold-700">Resume</span>
                 </button>
               ))}
@@ -1409,13 +1441,13 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
 
       {pending.length > 0 && (
         <div>
-          <div className="text-xs text-slate-600 tracking-widest mb-2">WAITING FOR REVIEW</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-2">WAITING FOR REVIEW</div>
           {CATEGORY_ORDER.filter(cat => pendingGroups[cat]).map(cat => (
             <div key={cat} className="mb-3">
-              <div className="text-xs text-slate-500 mb-1">{cat}</div>
+              <div className="text-xs text-sand-500 mb-1">{cat}</div>
               {pendingGroups[cat].map(s => (
-                <div key={s.id} className="flex items-center justify-between py-2 px-2 border-b border-slate-300/50 last:border-0">
-                  <span className="text-slate-700 text-sm">{s.title}</span>
+                <div key={s.id} className="flex items-center justify-between py-2 px-2 border-b border-sand-300/50 last:border-0">
+                  <span className="text-sand-700 text-sm">{s.title}</span>
                   <span className="text-xs text-gold-700 flex items-center gap-1"><IconClock size={12} /> pending</span>
                 </div>
               ))}
@@ -1426,21 +1458,21 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
 
       {approved.length > 0 && (
         <div>
-          <div className="text-xs text-slate-600 tracking-widest mb-2">COMPLETED ({approved.length})</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-2">COMPLETED ({approved.length})</div>
           {CATEGORY_ORDER.filter(cat => completedGroups[cat]).map(cat => (
             <div key={cat} className="mb-3">
-              <div className="text-xs text-slate-500 mb-1">{cat}</div>
+              <div className="text-xs text-sand-500 mb-1">{cat}</div>
               <div className="grid grid-cols-3 gap-2">
                 {completedGroups[cat].map(s => (
                   <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
                     {s.snapshot ? (
-                      <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded-xl border border-slate-300/50 hover:border-brand-300/60 transition-colors" />
+                      <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors" />
                     ) : (
-                      <div className="w-full aspect-square flex items-center justify-center bg-slate-100/40 rounded-xl border border-slate-300/50 hover:border-brand-300/60 transition-colors">
+                      <div className="w-full aspect-square flex items-center justify-center bg-sand-100/40 rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors">
                         <IconCheck size={20} className="text-brand-700" />
                       </div>
                     )}
-                    <span className="text-xs text-slate-600 text-center leading-tight">{s.title}</span>
+                    <span className="text-xs text-sand-600 text-center leading-tight">{s.title}</span>
                     <span className="text-xs text-brand-700">+{s.points}</span>
                   </button>
                 ))}
@@ -1451,7 +1483,7 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
       )}
 
       {drafts.length === 0 && pending.length === 0 && approved.length === 0 && (
-        <div className="text-sm text-slate-500 py-6 text-center">Nothing here yet -- finish or save a task and it'll show up.</div>
+        <div className="text-sm text-sand-500 py-6 text-center">Nothing here yet -- finish or save a task and it'll show up.</div>
       )}
 
       {activeTask && (
@@ -1502,25 +1534,25 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
       <div className="space-y-4">
         {teamError && <div className="text-sm text-brick-700">{teamError}</div>}
         <Panel>
-          <div className="text-xs text-slate-600 tracking-widest mb-3">JOIN A TEAM</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">JOIN A TEAM</div>
           <div className="flex gap-2">
             <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="Team code"
-              className="flex-1 bg-slate-100/60 border border-slate-300/50 rounded-xl px-3 py-2 text-sm font-mono uppercase" />
-            <button onClick={attemptJoin} className="bg-brand-500 hover:bg-brand-400 text-slate-900 font-semibold rounded-xl px-4 text-sm transition-colors">Join</button>
+              className="flex-1 bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-2 text-sm font-mono uppercase" />
+            <button onClick={attemptJoin} className="bg-brand-500 hover:bg-brand-400 text-sand-900 font-semibold rounded-xl px-4 text-sm transition-colors">Join</button>
           </div>
         </Panel>
         <Panel>
-          <div className="text-xs text-slate-600 tracking-widest mb-3">START A TEAM</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">START A TEAM</div>
           <div className="space-y-2">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name"
-              className="w-full bg-slate-100/60 border border-slate-300/50 rounded-xl px-3 py-2 text-sm" />
+              className="w-full bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-2 text-sm" />
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Goal:</span>
+              <span className="text-xs text-sand-500">Goal:</span>
               <input type="number" min={1} value={goalPoints} onChange={(e) => setGoalPoints(e.target.value)}
-                className="w-24 bg-slate-100/60 border border-slate-300/50 rounded-xl px-3 py-1.5 text-sm" />
-              <span className="text-xs text-slate-500">points</span>
+                className="w-24 bg-sand-100/60 border border-sand-300/50 rounded-xl px-3 py-1.5 text-sm" />
+              <span className="text-xs text-sand-500">points</span>
             </div>
-            <button onClick={attemptCreate} className="w-full bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl py-2 text-sm transition-colors">Create Team</button>
+            <button onClick={attemptCreate} className="w-full bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">Create Team</button>
           </div>
         </Panel>
       </div>
@@ -1535,32 +1567,32 @@ function CommunityPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam
       {teamError && <div className="text-sm text-brick-700">{teamError}</div>}
       <Panel>
         <div className="flex items-center justify-between mb-1">
-          <div className="font-semibold text-slate-900">{team.name}</div>
-          <div className="font-mono text-xs text-slate-500">code: {team.code}</div>
+          <div className="font-semibold text-sand-900">{team.name}</div>
+          <div className="font-mono text-xs text-sand-500">code: {team.code}</div>
         </div>
-        <div className="text-xs text-slate-500 mb-2">{totalPoints} / {team.goalPoints} points{pct >= 100 ? " -- GOAL REACHED! 🎉" : ""}</div>
-        <div className="h-2 bg-slate-100/60 rounded-xl overflow-hidden">
+        <div className="text-xs text-sand-500 mb-2">{totalPoints} / {team.goalPoints} points{pct >= 100 ? " -- GOAL REACHED! 🎉" : ""}</div>
+        <div className="h-2 bg-sand-100/60 rounded-xl overflow-hidden">
           <div className="h-full bg-brand-400 transition-all" style={{ width: pct + "%" }} />
         </div>
       </Panel>
       <Panel>
-        <div className="text-xs text-slate-600 tracking-widest mb-3">LEADERBOARD</div>
+        <div className="text-xs text-sand-600 tracking-widest mb-3">LEADERBOARD</div>
         {team.leaderboard.map((m, i) => (
-          <div key={m.handle} className="flex items-center justify-between py-1.5 border-b border-slate-300/50 last:border-0">
-            <span className="text-sm text-slate-700">{i + 1}. {m.handle}</span>
+          <div key={m.handle} className="flex items-center justify-between py-1.5 border-b border-sand-300/50 last:border-0">
+            <span className="text-sm text-sand-700">{i + 1}. {m.handle}</span>
             <span className="text-xs text-brand-700">{m.points}</span>
           </div>
         ))}
       </Panel>
-      <button onClick={onLeaveTeam} className="text-xs text-slate-500 hover:text-brick-700">Leave team</button>
+      <button onClick={onLeaveTeam} className="text-xs text-sand-500 hover:text-brick-700">Leave team</button>
 
       {confirmSwitch && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
-          <div className="bg-slate-200 border border-slate-400 rounded-lg p-5 max-w-sm">
-            <div className="text-sm text-slate-800 mb-4">You're already on team "{team.name}" -- switch to the new one instead?</div>
+          <div className="bg-sand-200 border border-sand-400 rounded-lg p-5 max-w-sm">
+            <div className="text-sm text-sand-800 mb-4">You're already on team "{team.name}" -- switch to the new one instead?</div>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirmSwitch(null)} className="text-sm text-slate-600 hover:text-slate-800">Cancel</button>
-              <button onClick={confirmYes} className="text-sm bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl px-3 py-1.5">Yes, switch</button>
+              <button onClick={() => setConfirmSwitch(null)} className="text-sm text-sand-600 hover:text-sand-800">Cancel</button>
+              <button onClick={confirmYes} className="text-sm bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl px-3 py-1.5">Yes, switch</button>
             </div>
           </div>
         </div>
@@ -1605,7 +1637,7 @@ function MePanel({ submissions, onLogout, balance, minutesAvailable, maxRedeemab
     // inverted from a dark-theme version of the same idea, where more
     // activity would instead mean brighter/more visible against a dark
     // background -- on white, bolder/darker is what reads as "more."
-    if (count === 0) return "bg-slate-200/60";
+    if (count === 0) return "bg-sand-200/60";
     if (count === 1) return "bg-brand-200";
     if (count === 2) return "bg-brand-500";
     return "bg-brand-700";
@@ -1617,37 +1649,37 @@ function MePanel({ submissions, onLogout, balance, minutesAvailable, maxRedeemab
 
       {maxRedeemable > 0 && (
         <Panel>
-          <div className="text-xs text-slate-600 tracking-widest mb-3">REDEEM FOR SCREEN TIME</div>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">REDEEM FOR SCREEN TIME</div>
           <div className="flex items-center gap-3">
             <input type="range" min={5} max={Math.max(5, maxRedeemable)} step={5}
               value={Math.min(redeemMinutes, maxRedeemable)}
               onChange={(e) => setRedeemMinutes(Number(e.target.value))}
-              className="flex-1 accent-gold-400 [&::-webkit-slider-runnable-track]:bg-slate-200 [&::-webkit-slider-runnable-track]:rounded-full [&::-moz-range-track]:bg-slate-200 [&::-moz-range-track]:rounded-full" />
+              className="flex-1 accent-gold-400 [&::-webkit-slider-runnable-track]:bg-sand-200 [&::-webkit-slider-runnable-track]:rounded-full [&::-moz-range-track]:bg-sand-200 [&::-moz-range-track]:rounded-full" />
             <span className="text-gold-700 w-14 text-right">{Math.min(redeemMinutes, maxRedeemable)}m</span>
           </div>
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-sand-500 mt-1">
             {capRemaining < dailyCapMinutes && (capRemaining + "m left of today's cap")}
           </div>
           <button onClick={() => onRedeem(Math.min(redeemMinutes, maxRedeemable))}
-            className="mt-3 w-full bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl py-2 text-sm transition-colors">
+            className="mt-3 w-full bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">
             Redeem {Math.min(redeemMinutes, maxRedeemable)} minutes
           </button>
         </Panel>
       )}
 
       <Panel>
-        <div className="text-xs text-slate-600 tracking-widest mb-2">STREAK</div>
-        <div className="text-3xl font-semibold text-gold-700">{streak} <span className="text-sm text-slate-500 font-normal">day{streak === 1 ? "" : "s"}</span></div>
+        <div className="text-xs text-sand-600 tracking-widest mb-2">STREAK</div>
+        <div className="text-3xl font-semibold text-gold-700">{streak} <span className="text-sm text-sand-500 font-normal">day{streak === 1 ? "" : "s"}</span></div>
       </Panel>
       <Panel>
-        <div className="text-xs text-slate-600 tracking-widest mb-3">ACTIVITY</div>
+        <div className="text-xs text-sand-600 tracking-widest mb-3">ACTIVITY</div>
         <div className="grid grid-flow-col grid-rows-7 gap-1 overflow-x-auto">
           {cells.map(c => (
             <div key={c.key} title={c.key + ": " + c.count} className={"w-3 h-3 rounded-sm " + shade(c.count)} />
           ))}
         </div>
       </Panel>
-      <button onClick={onLogout} className="w-full bg-slate-300 hover:bg-slate-400 text-slate-800 font-semibold rounded-xl py-2 text-sm transition-colors">Log out</button>
+      <button onClick={onLogout} className="w-full bg-sand-300 hover:bg-sand-400 text-sand-800 font-semibold rounded-xl py-2 text-sm transition-colors">Log out</button>
     </div>
   );
 }
@@ -1667,15 +1699,15 @@ function CompletedDetail({ submission, onBack }) {
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div style={GRID_BG}
         className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
-        <div className="max-w-2xl mx-auto px-4 py-6 pb-16 text-slate-900">
+        <div className="max-w-2xl mx-auto px-4 py-6 pb-16 text-sand-900">
           <TopBar onBack={onBack} backLabel="Back" label={submission.title.toUpperCase()} />
           <Panel className="mb-4">
             <div className="flex items-center justify-between mb-1">
-              <div className="font-semibold text-slate-900">{submission.title}</div>
+              <div className="font-semibold text-sand-900">{submission.title}</div>
               <span className="text-brand-700 text-sm">+{submission.points}</span>
             </div>
             {submission.explanation && (
-              <div className="text-sm text-slate-600 italic mt-2 border-l-2 border-slate-400 pl-3">"{submission.explanation}"</div>
+              <div className="text-sm text-sand-600 italic mt-2 border-l-2 border-sand-400 pl-3">"{submission.explanation}"</div>
             )}
           </Panel>
           <Panel>
@@ -1690,7 +1722,7 @@ function CompletedDetail({ submission, onBack }) {
 function TopBar({ onBack, label, backLabel = "Switch" }) {
   return (
     <div className="flex items-center justify-between mb-6">
-      <button onClick={onBack} className="text-slate-600 hover:text-slate-800 flex items-center gap-1 text-sm">
+      <button onClick={onBack} className="text-sand-600 hover:text-sand-800 flex items-center gap-1 text-sm">
         <IconBack size={15} /> {backLabel}
       </button>
       <div className="text-xs tracking-widest text-gold-700 flex items-center gap-1">
@@ -1703,7 +1735,7 @@ function TopBar({ onBack, label, backLabel = "Switch" }) {
 function Section({ label, children }) {
   return (
     <div className="mb-6">
-      <div className="text-xs text-slate-500 tracking-widest mb-2">{label}</div>
+      <div className="text-xs text-sand-500 tracking-widest mb-2">{label}</div>
       {children}
     </div>
   );
@@ -1801,21 +1833,21 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div style={GRID_BG}
         className={"transition-transform duration-300 ease-out " + (entered ? "translate-x-0" : "translate-x-full")}>
-        <div className="max-w-3xl mx-auto px-4 py-6 pb-16 text-slate-900">
+        <div className="max-w-3xl mx-auto px-4 py-6 pb-16 text-sand-900">
           <TopBar onBack={onCancel} backLabel="Back" label={task.title.toUpperCase()} />
 
           <Panel className="mb-4">
-            <div className="font-semibold text-slate-900 mb-1">{task.title}</div>
-            <div className="text-xs text-slate-500 mb-3">Worth {task.points} points</div>
-            <div className="text-sm text-slate-600">{task.brief}</div>
+            <div className="font-semibold text-sand-900 mb-1">{task.title}</div>
+            <div className="text-xs text-sand-500 mb-3">Worth {task.points} points</div>
+            <div className="text-sm text-sand-600">{task.brief}</div>
           </Panel>
 
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm text-slate-700">Your code</label>
+              <label className="text-sm text-sand-700">Your code</label>
               <div className="flex items-center gap-3">
                 <button onClick={handleSave}
-                  className={"text-xs flex items-center gap-1 " + (justSaved ? "text-brand-700" : "text-slate-600 hover:text-slate-800")}>
+                  className={"text-xs flex items-center gap-1 " + (justSaved ? "text-brand-700" : "text-sand-600 hover:text-sand-800")}>
                   {justSaved ? "✓ Saved" : "💾 Save"}
                 </button>
                 {tip && (
@@ -1837,7 +1869,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             {running ? (
               isJudge ? (
                 <button disabled
-                  className="mt-2 w-full bg-slate-300 text-slate-600 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
+                  className="mt-2 w-full bg-sand-300 text-sand-600 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
                   Running tests...
                 </button>
               ) : (
@@ -1848,7 +1880,7 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
               )
             ) : (
               <button onClick={handleRun}
-                className="mt-2 w-full bg-brand-400 text-slate-900 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
+                className="mt-2 w-full bg-brand-400 text-sand-900 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
                 <IconZap size={14} /> Run
               </button>
             )}
@@ -1856,18 +1888,18 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
 
           {!isJudge && (
             <div className="mb-4">
-              <label className="text-sm text-slate-700 mb-2 block">Your drawing</label>
+              <label className="text-sm text-sand-700 mb-2 block">Your drawing</label>
               <div id="turtle-target" tabIndex={0}
-                className="w-full bg-white rounded-xl border border-slate-400 outline-none"
+                className="w-full bg-white rounded-xl border border-sand-400 outline-none"
                 style={{ minHeight: 420 }} />
             </div>
           )}
 
           {isJudge ? (
             <div className="mb-4">
-              <label className="text-sm text-slate-700 mb-2 block">Test Results</label>
+              <label className="text-sm text-sand-700 mb-2 block">Test Results</label>
               {testResults.length === 0 ? (
-                <div className="text-xs rounded-xl border border-slate-300 bg-slate-50/60 px-3 py-2 text-slate-500 italic">
+                <div className="text-xs rounded-xl border border-sand-300 bg-sand-50/60 px-3 py-2 text-sand-500 italic">
                   No results yet — click Run.
                 </div>
               ) : (
@@ -1887,11 +1919,11 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
                         <div key={j} className="text-cyan-300/80 mt-1 first:mt-1.5">&gt; {v}</div>
                       ))}
                       {r.passed ? (
-                        <div className="text-slate-600 mt-1 whitespace-pre-wrap">{r.actual}</div>
+                        <div className="text-sand-600 mt-1 whitespace-pre-wrap">{r.actual}</div>
                       ) : (
                         <>
-                          <div className="text-slate-600 mt-1 whitespace-pre-wrap">expected: {r.expected}</div>
-                          <div className="text-slate-600 whitespace-pre-wrap">got: {r.error ? r.error : (r.actual || "(nothing printed)")}</div>
+                          <div className="text-sand-600 mt-1 whitespace-pre-wrap">expected: {r.expected}</div>
+                          <div className="text-sand-600 whitespace-pre-wrap">got: {r.error ? r.error : (r.actual || "(nothing printed)")}</div>
                         </>
                       )}
                     </div>
@@ -1901,11 +1933,11 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
             </div>
           ) : (
             <div className="mb-4">
-              <label className="text-sm text-slate-700 mb-2 block">Output</label>
+              <label className="text-sm text-sand-700 mb-2 block">Output</label>
               <div className={"text-xs rounded-xl border overflow-y-auto " +
                 (stopped ? "bg-gold-500/10 border-gold-400/40"
                  : runError ? "bg-brick-500/10 border-brick-400/40"
-                 : "bg-slate-50/60 border-slate-300")}
+                 : "bg-sand-50/60 border-sand-300")}
                 style={{ minHeight: 140, maxHeight: 260 }}>
                 {stopped ? (
                   <div className="px-3 py-1.5 text-gold-700">Stopped.</div>
@@ -1913,34 +1945,34 @@ function SubmitModal({ task, explanation, setExplanation, code, setCode, onCance
                   <div className="px-3 py-1.5 text-brick-700">Your code hit a snag: {runError}</div>
                 ) : output ? (
                   output.split("\n").map((line, i) => (
-                    <div key={i} className="px-3 py-1.5 text-slate-700 border-b border-slate-200/60 last:border-0 whitespace-pre-wrap">{line}</div>
+                    <div key={i} className="px-3 py-1.5 text-sand-700 border-b border-sand-200/60 last:border-0 whitespace-pre-wrap">{line}</div>
                   ))
                 ) : (
-                  <div className="px-3 py-1.5 text-slate-500 italic">Nothing printed yet — click Run.</div>
+                  <div className="px-3 py-1.5 text-sand-500 italic">Nothing printed yet — click Run.</div>
                 )}
               </div>
             </div>
           )}
 
           <Panel>
-            <label className="text-sm text-slate-700 mb-2 block">In your own words — what does your code do?</label>
+            <label className="text-sm text-sand-700 mb-2 block">In your own words — what does your code do?</label>
             <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={3}
               placeholder="Explain it like Dad hasn't seen it..."
-              className="w-full bg-slate-200 border border-slate-400 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-brand-300 resize-none mb-4" />
+              className="w-full bg-sand-200 border border-sand-400 rounded-xl p-3 text-sm text-sand-900 outline-none focus:border-brand-300 resize-none mb-4" />
 
             <button disabled={!canSubmit} onClick={handleSubmit}
-              className="w-full bg-brand-400 disabled:bg-slate-300 disabled:text-slate-500 text-slate-900 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
+              className="w-full bg-brand-400 disabled:bg-sand-300 disabled:text-sand-500 text-sand-900 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
               <IconSend size={14} /> Submit
             </button>
             {isJudge ? (
               !allTestsPassed && (
-                <div className="text-xs text-slate-500 mt-2 text-center">
+                <div className="text-xs text-sand-500 mt-2 text-center">
                   {testResults.length === 0 ? "Run your code to check it against the test cases." : "All test cases must pass before submitting."}
                 </div>
               )
             ) : (
               !hasRun && (
-                <div className="text-xs text-slate-500 mt-2 text-center">Run your code at least once before submitting.</div>
+                <div className="text-xs text-sand-500 mt-2 text-center">Run your code at least once before submitting.</div>
               )
             )}
           </Panel>
@@ -1966,7 +1998,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
       <TopBar onBack={onBack} label="PARENT" />
-      {familyName && <div className="text-xs text-slate-500 -mt-4 mb-4">{familyName}</div>}
+      {familyName && <div className="text-xs text-sand-500 -mt-4 mb-4">{familyName}</div>}
       {kids.length === 0 && (
         <div className="mb-4 text-sm text-gold-700 bg-gold-500/10 border border-gold-400/30 rounded-xl px-3 py-2">
           Add your first kid in the Settings tab to get started.
@@ -1975,7 +2007,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
       <div className="flex gap-1 mb-6 text-xs">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-slate-500 hover:text-slate-700")}>
+            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
@@ -1990,7 +2022,7 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
 }
 
 function ReviewTab({ pending, kids, onReview }) {
-  if (pending.length === 0) return <div className="text-slate-500 text-sm italic">Nothing waiting for review.</div>;
+  if (pending.length === 0) return <div className="text-sand-500 text-sm italic">Nothing waiting for review.</div>;
   return (
     <div className="grid gap-3">
       {pending.map(s => <ReviewCard key={s.id} s={s} kids={kids} onReview={onReview} />)}
@@ -2027,7 +2059,7 @@ function RunnableSubmission({ s, targetPrefix }) {
   return (
     <>
       {s.snapshot && (
-        <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded-xl border border-slate-300 mb-3" />
+        <img src={s.snapshot} alt={s.title} className="w-full max-w-xs mx-auto bg-white rounded-xl border border-sand-300 mb-3" />
       )}
       {s.code && s.code.trim() && (
         <>
@@ -2037,9 +2069,9 @@ function RunnableSubmission({ s, targetPrefix }) {
             </div>
           )}
           <pre className={"text-xs font-mono text-brand-700 rounded-xl p-3 mb-2 overflow-x-auto whitespace-pre-wrap border " +
-            (s.pasted ? "bg-gold-950/20 border-gold-400/30" : "bg-slate-50/60 border-slate-300")}>{s.code}</pre>
+            (s.pasted ? "bg-gold-950/20 border-gold-400/30" : "bg-sand-50/60 border-sand-300")}>{s.code}</pre>
           <button onClick={handleRun} disabled={running}
-            className="w-full mb-3 border border-brand-400/40 text-brand-700 disabled:border-slate-300 disabled:text-slate-500 rounded-xl py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-brand-400/10">
+            className="w-full mb-3 border border-brand-400/40 text-brand-700 disabled:border-sand-300 disabled:text-sand-500 rounded-xl py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-brand-400/10">
             <IconZap size={13} /> {running ? "Running…" : "Run this code"}
           </button>
           {/* Always in the DOM (not gated on hasRun) — runPython needs to find
@@ -2048,10 +2080,10 @@ function RunnableSubmission({ s, targetPrefix }) {
               CSS instead of unmounting. */}
           <div className={hasRun ? "mb-3" : "hidden"}>
             <div id={targetId} tabIndex={0}
-              className="w-full bg-white rounded-xl border border-slate-400 outline-none mb-2"
+              className="w-full bg-white rounded-xl border border-sand-400 outline-none mb-2"
               style={{ minHeight: 180 }} />
             {output && (
-              <pre className="text-xs font-mono text-slate-700 bg-slate-50/60 border border-slate-300 rounded-xl p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">{output}</pre>
+              <pre className="text-xs font-mono text-sand-700 bg-sand-50/60 border border-sand-300 rounded-xl p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">{output}</pre>
             )}
             {runError && (
               <div className="text-xs text-brick-700 bg-brick-500/10 border border-brick-400/40 rounded-xl p-2">{runError}</div>
@@ -2069,21 +2101,21 @@ function ReviewCard({ s, kids, onReview }) {
   return (
     <Panel>
       <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-slate-900">{s.title} <span className="text-xs text-slate-500">({kidName(kids, s.kidId)})</span></span>
+        <span className="font-semibold text-sand-900">{s.title} <span className="text-xs text-sand-500">({kidName(kids, s.kidId)})</span></span>
         <span className="text-brand-700 text-sm">+{s.points}</span>
       </div>
-      <div className="text-sm text-slate-600 italic mb-3 border-l-2 border-slate-400 pl-3">"{s.explanation}"</div>
+      <div className="text-sm text-sand-600 italic mb-3 border-l-2 border-sand-400 pl-3">"{s.explanation}"</div>
       <RunnableSubmission s={s} targetPrefix="review-target-" />
       <input placeholder="Optional note if sending back..." value={note}
         onChange={(e) => setNote(e.target.value)}
-        className="w-full bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-slate-600 mb-3" />
+        className="w-full bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-xs text-sand-800 outline-none focus:border-sand-600 mb-3" />
       <div className="flex gap-2">
         <button onClick={() => onReview(s.id, "rejected", note)}
           className="flex-1 border border-brick-400/40 text-brick-700 rounded-xl py-1.5 text-sm flex items-center justify-center gap-1 hover:bg-brick-400/10">
           <IconRedo size={13} /> Send back
         </button>
         <button onClick={() => onReview(s.id, "approved", "")}
-          className="flex-1 bg-brand-400 text-slate-900 font-semibold rounded-xl py-1.5 text-sm flex items-center justify-center gap-1">
+          className="flex-1 bg-brand-400 text-sand-900 font-semibold rounded-xl py-1.5 text-sm flex items-center justify-center gap-1">
           <IconCheck size={13} /> Approve
         </button>
       </div>
@@ -2092,7 +2124,7 @@ function ReviewCard({ s, kids, onReview }) {
 }
 
 function SuggestionsTab({ suggestions, kids, onApprove, onReject }) {
-  if (suggestions.length === 0) return <div className="text-slate-500 text-sm italic">No agent-proposed tasks waiting for review.</div>;
+  if (suggestions.length === 0) return <div className="text-sand-500 text-sm italic">No agent-proposed tasks waiting for review.</div>;
   return (
     <div className="grid gap-3">
       {suggestions.map(t => {
@@ -2100,17 +2132,17 @@ function SuggestionsTab({ suggestions, kids, onApprove, onReject }) {
         return (
           <Panel key={t.id}>
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-slate-900">{t.title} <span className="text-xs text-slate-500">({kidName(kids, t.kidId)})</span></span>
+              <span className="font-semibold text-sand-900">{t.title} <span className="text-xs text-sand-500">({kidName(kids, t.kidId)})</span></span>
               <span className="flex items-center gap-2">
-                <span className="text-xs px-1.5 py-0.5 rounded-xl" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>
                 <span className="text-brand-700 text-sm">+{t.points}</span>
               </span>
             </div>
-            <div className="text-sm text-slate-600 mb-3">{t.brief}</div>
+            <div className="text-sm text-sand-600 mb-3">{t.brief}</div>
             {t.skills && t.skills.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-3">
                 {t.skills.map(s => (
-                  <span key={s} className="text-xs px-1.5 py-0.5 rounded-xl border border-slate-400 text-slate-600">{s}</span>
+                  <span key={s} className="text-xs px-1.5 py-0.5 rounded-xl border border-sand-400 text-sand-600">{s}</span>
                 ))}
               </div>
             )}
@@ -2120,7 +2152,7 @@ function SuggestionsTab({ suggestions, kids, onApprove, onReject }) {
                 <IconX size={13} /> Reject
               </button>
               <button onClick={() => onApprove(t.id)}
-                className="flex-1 bg-brand-400 text-slate-900 font-semibold rounded-xl py-1.5 text-sm flex items-center justify-center gap-1">
+                className="flex-1 bg-brand-400 text-sand-900 font-semibold rounded-xl py-1.5 text-sm flex items-center justify-center gap-1">
                 <IconCheck size={13} /> Approve
               </button>
             </div>
@@ -2150,24 +2182,24 @@ function TasksTab({ tasks, kids, onAddTask, onDeleteTask }) {
         <Panel className="mb-4">
           <div className="grid gap-2">
             <select value={form.kidId} onChange={(e) => setForm({ ...form, kidId: e.target.value })}
-              className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300">
+              className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300">
               {kids.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
             </select>
             <input placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300" />
+              className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300" />
             <textarea placeholder="Brief description" value={form.brief} onChange={(e) => setForm({ ...form, brief: e.target.value })} rows={2}
-              className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300 resize-none" />
+              className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm outline-none focus:border-brand-300 resize-none" />
             <div className="flex gap-2">
               <input type="number" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })}
-                className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm w-24 outline-none focus:border-brand-300" />
+                className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-24 outline-none focus:border-brand-300" />
               <select value={form.difficulty} onChange={(e) => setForm({ ...form, difficulty: e.target.value })}
-                className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm flex-1 outline-none focus:border-brand-300">
+                className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm flex-1 outline-none focus:border-brand-300">
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
               </select>
             </div>
-            <button onClick={submit} className="bg-brand-400 text-slate-900 font-semibold rounded-xl py-1.5 text-sm mt-1">Add task</button>
+            <button onClick={submit} className="bg-brand-400 text-sand-900 font-semibold rounded-xl py-1.5 text-sm mt-1">Add task</button>
           </div>
         </Panel>
       )}
@@ -2175,12 +2207,12 @@ function TasksTab({ tasks, kids, onAddTask, onDeleteTask }) {
         {tasks.map(t => {
           const d = DIFFICULTY[t.difficulty];
           return (
-            <div key={t.id} className="flex items-center justify-between border border-slate-300/50 rounded-xl px-3 py-2">
+            <div key={t.id} className="flex items-center justify-between border border-sand-300/50 rounded-xl px-3 py-2">
               <div>
-                <div className="text-sm text-slate-800">{t.title}</div>
+                <div className="text-sm text-sand-800">{t.title}</div>
                 <div className="text-xs" style={{ color: d.color }}>{d.label} · {t.points}pt · {kidName(kids, t.kidId)}</div>
               </div>
-              <button onClick={() => onDeleteTask(t.id)} className="text-slate-500 hover:text-brick-700"><IconTrash size={15} /></button>
+              <button onClick={() => onDeleteTask(t.id)} className="text-sand-500 hover:text-brick-700"><IconTrash size={15} /></button>
             </div>
           );
         })}
@@ -2196,25 +2228,25 @@ function TasksTab({ tasks, kids, onAddTask, onDeleteTask }) {
 function HistoryCard({ s, kids }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border border-slate-300/50 rounded-xl px-3 py-2 text-sm">
+    <div className="border border-sand-300/50 rounded-xl px-3 py-2 text-sm">
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between text-left">
         <span className="flex items-center gap-2">
           {s.status === "approved" ? <IconCheck size={14} className="text-brand-700" /> : <IconX size={14} className="text-brick-700" />}
-          {s.title} <span className="text-xs text-slate-500">({kidName(kids, s.kidId)})</span>
+          {s.title} <span className="text-xs text-sand-500">({kidName(kids, s.kidId)})</span>
         </span>
         <span className="flex items-center gap-2">
-          <span className="text-xs text-slate-600">{s.status === "approved" ? ("+" + s.points) : "sent back"}</span>
-          <IconBack size={12} className={"text-slate-500 transition-transform " + (expanded ? "-rotate-90" : "rotate-180")} />
+          <span className="text-xs text-sand-600">{s.status === "approved" ? ("+" + s.points) : "sent back"}</span>
+          <IconBack size={12} className={"text-sand-500 transition-transform " + (expanded ? "-rotate-90" : "rotate-180")} />
         </span>
       </button>
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-slate-300/50">
+        <div className="mt-3 pt-3 border-t border-sand-300/50">
           {s.explanation && (
-            <div className="text-sm text-slate-600 italic mb-3 border-l-2 border-slate-400 pl-3">"{s.explanation}"</div>
+            <div className="text-sm text-sand-600 italic mb-3 border-l-2 border-sand-400 pl-3">"{s.explanation}"</div>
           )}
           <RunnableSubmission s={s} targetPrefix="history-target-" />
           {s.reviewNote && (
-            <div className="text-xs text-slate-600 bg-slate-200/60 border border-slate-300 rounded-xl p-2">Note: {s.reviewNote}</div>
+            <div className="text-xs text-sand-600 bg-sand-200/60 border border-sand-300 rounded-xl p-2">Note: {s.reviewNote}</div>
           )}
         </div>
       )}
@@ -2228,22 +2260,22 @@ function HistoryTab({ submissions, redemptions, kids }) {
   return (
     <div className="grid gap-4">
       <div>
-        <div className="text-xs text-slate-500 tracking-widest mb-2">SUBMISSIONS</div>
+        <div className="text-xs text-sand-500 tracking-widest mb-2">SUBMISSIONS</div>
         <div className="grid gap-2">
           {reviewed.map(s => <HistoryCard key={s.id} s={s} kids={kids} />)}
-          {reviewed.length === 0 && <div className="text-slate-500 text-sm italic">No reviewed submissions yet.</div>}
+          {reviewed.length === 0 && <div className="text-sand-500 text-sm italic">No reviewed submissions yet.</div>}
         </div>
       </div>
       <div>
-        <div className="text-xs text-slate-500 tracking-widest mb-2">REDEMPTIONS</div>
+        <div className="text-xs text-sand-500 tracking-widest mb-2">REDEMPTIONS</div>
         <div className="grid gap-2">
           {redemptions.slice().reverse().map(r => (
-            <div key={r.id} className="flex items-center justify-between border border-slate-300/50 rounded-xl px-3 py-2 text-sm">
-              <span className="flex items-center gap-2 text-slate-700"><IconAward size={14} className="text-gold-700" /> {r.date} <span className="text-xs text-slate-500">({kidName(kids, r.kidId)})</span></span>
+            <div key={r.id} className="flex items-center justify-between border border-sand-300/50 rounded-xl px-3 py-2 text-sm">
+              <span className="flex items-center gap-2 text-sand-700"><IconAward size={14} className="text-gold-700" /> {r.date} <span className="text-xs text-sand-500">({kidName(kids, r.kidId)})</span></span>
               <span className="text-xs text-gold-700">{r.minutes}m (−{r.points}pt)</span>
             </div>
           ))}
-          {redemptions.length === 0 && <div className="text-slate-500 text-sm italic">No redemptions yet.</div>}
+          {redemptions.length === 0 && <div className="text-sand-500 text-sm italic">No redemptions yet.</div>}
         </div>
       </div>
     </div>
@@ -2283,49 +2315,49 @@ function SettingsTab({ settings, kids, onUpdateSettings, onUpdateKid, onAddKid }
   return (
     <Panel className="grid gap-4 max-w-sm">
       <div>
-        <label className="text-xs text-slate-600 block mb-1">Points per minute of screen time</label>
+        <label className="text-xs text-sand-600 block mb-1">Points per minute of screen time</label>
         <input type="number" value={local.pointsPerMinute} onChange={(e) => setLocal({ ...local, pointsPerMinute: Number(e.target.value) })}
-          className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
+          className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
       </div>
       <div>
-        <label className="text-xs text-slate-600 block mb-1">Daily redemption cap (minutes)</label>
+        <label className="text-xs text-sand-600 block mb-1">Daily redemption cap (minutes)</label>
         <input type="number" value={local.dailyCapMinutes} onChange={(e) => setLocal({ ...local, dailyCapMinutes: Number(e.target.value) })}
-          className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
+          className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
       </div>
       {kids.map(kid => (
-        <div key={kid.id} className="border-t border-slate-300/50 pt-4">
+        <div key={kid.id} className="border-t border-sand-300/50 pt-4">
           <div className="flex items-center gap-3 mb-2">
             {(kidAvatars[kid.id] || kid.avatar) ? (
-              <img src={kidAvatars[kid.id] || kid.avatar} alt={kid.name} className="w-10 h-10 rounded-full object-cover border border-slate-400" />
+              <img src={kidAvatars[kid.id] || kid.avatar} alt={kid.name} className="w-10 h-10 rounded-full object-cover border border-sand-400" />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-400 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-sand-200 border border-sand-400 flex items-center justify-center">
                 <IconZap size={16} className="text-brand-700" />
               </div>
             )}
             <div>
-              <div className="text-sm text-slate-700">{kid.name}</div>
+              <div className="text-sm text-sand-700">{kid.name}</div>
               <div className="text-xs text-brand-700">Login ID: {kid.handle}</div>
-              {kid.teamName && <div className="text-xs text-slate-500">Team: {kid.teamName}</div>}
+              {kid.teamName && <div className="text-xs text-sand-500">Team: {kid.teamName}</div>}
             </div>
           </div>
-          <label className="text-xs text-slate-600 block mb-1">Photo</label>
+          <label className="text-xs text-sand-600 block mb-1">Photo</label>
           <input type="file" accept="image/*" onChange={(e) => pickAvatar(kid.id, e.target.files[0])}
-            className="text-xs text-slate-600 mb-3 block w-full file:mr-2 file:py-1 file:px-2 file:rounded-xl file:border-0 file:bg-slate-300 file:text-slate-800 file:text-xs" />
-          <label className="text-xs text-slate-600 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
+            className="text-xs text-sand-600 mb-3 block w-full file:mr-2 file:py-1 file:px-2 file:rounded-xl file:border-0 file:bg-sand-300 file:text-sand-800 file:text-xs" />
+          <label className="text-xs text-sand-600 block mb-1">New PIN for {kid.name} (leave blank to keep current)</label>
           <input value={kidPins[kid.id] || ""} onChange={(e) => setKidPins({ ...kidPins, [kid.id]: e.target.value })} placeholder="••••"
-            className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
+            className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm w-full outline-none focus:border-brand-300" />
         </div>
       ))}
-      <button onClick={save} className="bg-gold-500 hover:bg-gold-400 text-slate-900 font-semibold rounded-xl py-2 text-sm">
+      <button onClick={save} className="bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm">
         Save settings
       </button>
-      <div className="border-t border-slate-300/50 pt-4">
-        <label className="text-xs text-slate-600 block mb-1">Add a kid</label>
+      <div className="border-t border-sand-300/50 pt-4">
+        <label className="text-xs text-sand-600 block mb-1">Add a kid</label>
         <div className="flex gap-2">
           <input value={newKidName} onChange={(e) => setNewKidName(e.target.value)} placeholder="Name"
             onKeyDown={(e) => e.key === "Enter" && addKid()}
-            className="bg-slate-200 border border-slate-400 rounded-xl px-2 py-1.5 text-sm flex-1 outline-none focus:border-brand-300" />
-          <button onClick={addKid} className="bg-brand-400 text-slate-900 font-semibold rounded-xl px-3 text-sm">Add</button>
+            className="bg-sand-200 border border-sand-400 rounded-xl px-2 py-1.5 text-sm flex-1 outline-none focus:border-brand-300" />
+          <button onClick={addKid} className="bg-brand-400 text-sand-900 font-semibold rounded-xl px-3 text-sm">Add</button>
         </div>
       </div>
     </Panel>
