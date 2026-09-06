@@ -869,7 +869,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
               <button key={b.task.id} onClick={() => setOpenedIndex(i)} disabled={openedIndex === i}
                 className={"flex flex-col items-center gap-2 " + (openedIndex === i ? "opacity-40" : "hover:scale-105 transition-transform")}>
                 <MysteryBox variant={variants[i] || CHEST_VARIANTS[0]} />
-                <span className="text-[10px] text-sand-500 tracking-wide">MYSTERY QUEST</span>
+                <span className="text-[10px] text-sand-500 tracking-wide">STILL SEALED</span>
               </button>
             ))}
           </div>
@@ -1416,9 +1416,9 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
       {tab === "quest" && (
         <div>
           <div className="mb-4 font-sans text-xs text-sand-500 flex items-center gap-2">
-            <IconTerminal size={13} /> Pick a task, write your code right here, and watch it draw.
+            <IconTerminal size={13} /> Every chest is sealed with a puzzle. Write the code, break the seal.
           </div>
-          <Section label="MYSTERY QUESTS">
+          <Section label="SEALED CHESTS">
             <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
           </Section>
         </div>
