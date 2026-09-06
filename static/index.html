@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Jersey+10&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   // Must come AFTER the CDN script (which is what defines window.tailwind
@@ -19,16 +19,18 @@
   //
   // "Cozy Pixel Garden" palette + type, picked from a 4-concept mockup
   // (see /pixel_concepts artifact from that session) -- warm cream
-  // ground, terracotta/sage/mustard accents, Silkscreen (a pixel-style
-  // display face) for chrome/labels/buttons, Inter kept for actual
-  // sentences (task briefs, explanations) since a pixel font hurts
-  // legibility at paragraph lengths.
+  // ground, terracotta/sage/mustard accents, Jersey 10 (a pixel-style
+  // display face -- swapped in for Silkscreen, which read too heavy/
+  // blocky next to plain text at real task-title lengths) for
+  // chrome/labels/buttons, Inter kept for actual sentences (task
+  // briefs, explanations) since a pixel font hurts legibility at
+  // paragraph lengths.
   tailwind.config = {
     theme: {
       extend: {
         fontFamily: {
           sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
-          display: ["Silkscreen", "ui-monospace", "monospace"],
+          display: ["Jersey 10", "ui-monospace", "monospace"],
         },
         colors: {
           // sage green -- primary actions
@@ -82,13 +84,13 @@
   body { margin: 0; -webkit-tap-highlight-color: transparent; font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: #E4D3B4; border-radius: 3px; }
-  /* "Cozy Pixel Garden": Silkscreen (pixel-style display face) for
+  /* "Cozy Pixel Garden": Jersey 10 (pixel-style display face) for
      chrome -- buttons, eyebrow section labels, titles/names -- kept
      off actual sentences (task briefs, explanations), which stay in
      Inter for legibility at paragraph length. Targeting by existing
      utility classes/tags rather than editing every element by hand. */
   button, h1, h2, h3, .font-semibold, [class*="tracking-"] {
-    font-family: "Silkscreen", ui-monospace, monospace;
+    font-family: "Jersey 10", ui-monospace, monospace;
   }
   /* Flat "plop" press feedback -- only on buttons with an actual fill
      color (a bg-* utility). Text-style buttons (tab bar, "Back") have
@@ -1374,10 +1376,10 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 pb-16">
-      <div className="flex gap-1 mb-6 text-xs">
+      <div className="flex gap-1 mb-6 text-xs overflow-x-auto">
         {["quest", "learn", "history", "community", "me"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
@@ -2112,10 +2114,10 @@ function ParentView({ kids, tasks, suggestions, submissions, redemptions, settin
           Add your first kid in the Settings tab to get started.
         </div>
       )}
-      <div className="flex gap-1 mb-6 text-xs">
+      <div className="flex gap-1 mb-6 text-xs overflow-x-auto">
         {["review", "suggestions", "tasks", "history", "settings"].map(key => (
           <button key={key} onClick={() => setTab(key)}
-            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
+            className={"px-3 py-1.5 rounded-t-xl border-b-2 tracking-wide whitespace-nowrap shrink-0 " + (tab === key ? "border-gold-400 text-gold-700" : "border-transparent text-sand-500 hover:text-sand-700")}>
             {key.toUpperCase()}{tabCount[key] > 0 ? " (" + tabCount[key] + ")" : ""}
           </button>
         ))}
