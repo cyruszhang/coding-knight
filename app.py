@@ -821,6 +821,7 @@ def init_db():
     # running" rather than an error.
     _ensure_column(db, "teams", "starts_at", "starts_at TEXT")
     _ensure_column(db, "teams", "ends_at", "ends_at TEXT")
+    _ensure_column(db, "teams", "leader_kid_id", "leader_kid_id TEXT")
     # Must run after the _ensure_column call above -- kids predates
     # family_id (an existing table gaining a new column), unlike parents,
     # which is created fresh with family_id already in its column list.
@@ -829,6 +830,22 @@ def init_db():
     # new quest overwrote the old one and the previous result was simply
     # forgotten. Seasons are rows instead. Fold any existing window into
     # season 1 -- idempotent, since init_db runs on every worker boot.
+    # Every guild needs a leader. Existing ones never recorded a founder,
+    # so adopt whoever started season 1 if that was captured, and
+    # otherwise the first member -- deterministic, so repeated boots agree.
+    for t in dbmod.fetchall(db.execute(
+            "SELECT id FROM teams WHERE leader_kid_id IS NULL")):
+        starter = dbmod.fetchone(db.execute(
+            """SELECT k.id AS id FROM team_quests q JOIN kids k
+               ON lower(k.handle) = lower(q.started_by)
+               WHERE q.team_id=? AND q.started_by IS NOT NULL
+               ORDER BY q.season ASC LIMIT 1""", (t["id"],)))
+        if not starter:
+            starter = dbmod.fetchone(db.execute(
+                "SELECT id FROM kids WHERE team_id=? ORDER BY id ASC LIMIT 1", (t["id"],)))
+        if starter:
+            db.execute("UPDATE teams SET leader_kid_id=? WHERE id=?", (starter["id"], t["id"]))
+
     for t in dbmod.fetchall(db.execute(
             "SELECT id, goal_points, starts_at, ends_at, created_at FROM teams "
             "WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL")):
@@ -1724,6 +1741,7 @@ def create_team():
         (team_id, name, code, goal_points, now,
          today.isoformat(), (today + timedelta(days=days)).isoformat()),
     )
+    db.execute("UPDATE teams SET leader_kid_id=? WHERE id=?", (g.kid_id, team_id))
     founder = dbmod.fetchone(db.execute("SELECT handle FROM kids WHERE id=?", (g.kid_id,)))
     db.execute(
         """INSERT INTO team_quests (id, team_id, season, goal_points, starts_at, ends_at, started_by, created_at)
@@ -1759,7 +1777,18 @@ def leave_team():
     if not g.kid_id:
         return jsonify({"error": "kid login required"}), 403
     db = get_db()
+    team_id = _kid_team(db, g.kid_id)
     db.execute("UPDATE kids SET team_id=NULL WHERE id=?", (g.kid_id,))
+    if team_id:
+        team = dbmod.fetchone(db.execute("SELECT leader_kid_id FROM teams WHERE id=?", (team_id,)))
+        # A leader walking out must not leave the guild unable to ever
+        # start another season. Succession is automatic: the longest-
+        # standing remaining member takes over.
+        if team and team["leader_kid_id"] == g.kid_id:
+            heir = dbmod.fetchone(db.execute(
+                "SELECT id FROM kids WHERE team_id=? ORDER BY id ASC LIMIT 1", (team_id,)))
+            db.execute("UPDATE teams SET leader_kid_id=? WHERE id=?",
+                       (heir["id"] if heir else None, team_id))
     dbmod.commit_and_sync(db)
     return jsonify({"ok": True})
 
@@ -1826,17 +1855,54 @@ def _kid_team(db, kid_id):
     return row["team_id"] if row and row["team_id"] else None
 
 
-@app.route("/api/teams/quest", methods=["POST"])
+@app.route("/api/teams/transfer", methods=["POST"])
 @require_family_session
-def start_team_quest():
-    """Start a fresh guild quest. Any member can kick one off -- the guild
-    is the unit here, and there's no notion of a guild leader."""
+def transfer_team_leadership():
+    """Hand the guild to another member.
+
+    Leadership is transferable precisely so a guild is never stranded by
+    a leader who drifts away -- combined with automatic succession when a
+    leader leaves, there is always someone able to start the next season.
+    """
     if not g.kid_id:
         return jsonify({"error": "kid login required"}), 403
     db = get_db()
     team_id = _kid_team(db, g.kid_id)
     if not team_id:
         return jsonify({"error": "not on a guild"}), 400
+    team = dbmod.fetchone(db.execute("SELECT leader_kid_id FROM teams WHERE id=?", (team_id,)))
+    if not team or team["leader_kid_id"] != g.kid_id:
+        return jsonify({"error": "only the guild leader can hand it on"}), 403
+    handle = (request.get_json(force=True).get("handle") or "").strip()
+    if not handle:
+        return jsonify({"error": "handle required"}), 400
+    target = dbmod.fetchone(db.execute(
+        "SELECT id, handle, team_id FROM kids WHERE lower(handle)=lower(?)", (handle,)))
+    # Must already be in this guild -- leadership can't be pushed onto a
+    # stranger, and the handle is the only identifier that crosses the
+    # family boundary here.
+    if not target or target["team_id"] != team_id:
+        return jsonify({"error": "not a member of this guild"}), 404
+    if target["id"] == g.kid_id:
+        return jsonify({"error": "you already lead this guild"}), 400
+    db.execute("UPDATE teams SET leader_kid_id=? WHERE id=?", (target["id"], team_id))
+    dbmod.commit_and_sync(db)
+    return jsonify({"ok": True, "leader": target["handle"]})
+
+
+@app.route("/api/teams/quest", methods=["POST"])
+@require_family_session
+def start_team_quest():
+    """Start a fresh guild season. Leader only."""
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    db = get_db()
+    team_id = _kid_team(db, g.kid_id)
+    if not team_id:
+        return jsonify({"error": "not on a guild"}), 400
+    team = dbmod.fetchone(db.execute("SELECT leader_kid_id FROM teams WHERE id=?", (team_id,)))
+    if not team or team["leader_kid_id"] != g.kid_id:
+        return jsonify({"error": "only the guild leader can start a season"}), 403
     data = request.get_json(force=True)
     try:
         goal_points = int(data.get("goalPoints") or 0)
@@ -1933,6 +1999,8 @@ def my_team():
     # to g.family_id, but a guild leaderboard is exactly the point here.
     # Only handle + points leave this query -- no name, email, family_id
     # or pin.
+    leader = dbmod.fetchone(db.execute(
+        "SELECT handle FROM kids WHERE id=?", (team["leader_kid_id"],))) if team["leader_kid_id"] else None
     seasons = _seasons(db, team["id"])
     current = seasons[0] if seasons else None
     window = _season_window(current)
@@ -1970,6 +2038,8 @@ def my_team():
             "daysLeft": window["daysLeft"],
             "questActive": window["active"],
             "startedBy": current["started_by"] if current else None,
+            "leaderHandle": leader["handle"] if leader else None,
+            "isLeader": bool(team["leader_kid_id"] and team["leader_kid_id"] == g.kid_id),
             "leaderboard": [{"handle": r["handle"], "points": r["points"]} for r in leaderboard],
             "history": history,
         }

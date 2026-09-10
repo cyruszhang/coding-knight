@@ -1375,6 +1375,16 @@ function App() {
     }
   }
 
+  async function transferGuild(handle) {
+    setTeamError(null);
+    try {
+      await apiPost("/teams/transfer", { handle });
+      await refreshTeam();
+    } catch (e) {
+      setTeamError("Couldn't hand the guild on.");
+    }
+  }
+
   async function startTeamQuest(goalPoints, days) {
     setTeamError(null);
     try {
@@ -1565,7 +1575,7 @@ function App() {
         <KidView kid={selectedKid} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
           taskStatus={taskStatus} team={team} teamError={teamError} quests={quests} skillMap={skillMap}
           onSubmit={submitTask} onRedeem={redeem} onBack={logout}
-          onCreateTeam={createTeam} onJoinTeam={joinTeam} onLeaveTeam={leaveTeam} onStartQuest={startTeamQuest} />
+          onCreateTeam={createTeam} onJoinTeam={joinTeam} onLeaveTeam={leaveTeam} onStartQuest={startTeamQuest} onTransfer={transferGuild} />
       )}
       {authRole === "parent" && (
         <ParentView kids={kids} tasks={tasks} suggestions={suggestions} submissions={submissions} redemptions={redemptions} settings={settings}
@@ -1734,7 +1744,7 @@ function FeaturedQuest({ task, label, blurb, bonusLabel, accent, points, sentBac
 }
 
 function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, team, teamError, quests, skillMap,
-  onSubmit, onRedeem, onBack, onCreateTeam, onJoinTeam, onLeaveTeam, onStartQuest }) {
+  onSubmit, onRedeem, onBack, onCreateTeam, onJoinTeam, onLeaveTeam, onStartQuest, onTransfer }) {
   const [tab, setTab] = useState("quest");
 
   const kidTasks = tasks.filter(t => t.kidId === kid.id);
@@ -1803,7 +1813,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
       {tab === "guild" && (
         <GuildPanel team={team} teamError={teamError}
           onCreateTeam={onCreateTeam} onJoinTeam={onJoinTeam} onLeaveTeam={onLeaveTeam}
-          onStartQuest={onStartQuest} />
+          onStartQuest={onStartQuest} onTransfer={onTransfer} />
       )}
 
       {tab === "me" && (
@@ -2006,13 +2016,14 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
 // another family's data (just a handle + a points total, nothing else).
 // Joining while already on a team asks for confirmation first so a
 // mistyped code doesn't silently bump you out of a team you like.
-function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, onStartQuest }) {
+function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, onStartQuest, onTransfer }) {
   // Contributions are fetched only when a member is actually opened,
   // rather than shipped with every leaderboard load -- it's a
   // cross-family read, so the less that leaves by default the better.
   const [openMemberHandle, setOpenMemberHandle] = useState(null);
   const [contributions, setContributions] = useState([]);
   const [memberLoading, setMemberLoading] = useState(false);
+  const [handingOn, setHandingOn] = useState(false);
   const [newGoal, setNewGoal] = useState(100);
   const [newDays, setNewDays] = useState(14);
 
@@ -2095,6 +2106,11 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
           <div className="font-semibold text-sand-900">{team.name}</div>
           <div className="font-mono text-xs text-sand-500">code: {team.code}</div>
         </div>
+        {team.leaderHandle && (
+          <div className="text-[10px] text-sand-500 tracking-wide mb-1">
+            LED BY {team.leaderHandle}{team.isLeader ? " (YOU)" : ""}
+          </div>
+        )}
         {team.endsAt && (
           <div className={"text-xs mb-2 " + (team.questActive ? "text-gold-700" : "text-sand-500")}>
             {team.season ? "SEASON " + team.season + " · " : ""}
@@ -2108,7 +2124,13 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
           <div className={"h-full transition-all " + (team.questActive ? "bg-brand-400" : "bg-sand-400")}
             style={{ width: pct + "%" }} />
         </div>
-        {!team.questActive && (
+        {!team.questActive && !team.isLeader && (
+          <div className="mt-3 font-sans text-xs text-sand-500">
+            Season {team.season || 0} is in the books. Waiting for {team.leaderHandle} to
+            start the next one.
+          </div>
+        )}
+        {!team.questActive && team.isLeader && (
           <div className="mt-3">
             <div className="font-sans text-xs text-sand-500 mb-2">
               Season {team.season || 0} is in the books. Start the next one — nothing
@@ -2181,6 +2203,35 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
             )}
           </div>
         ))}
+        {team.isLeader && team.leaderboard.length > 1 && (
+          <div className="mt-3 pt-3 border-t border-sand-300/50">
+            {!handingOn ? (
+              <button onClick={() => setHandingOn(true)}
+                className="text-xs text-sand-500 hover:text-sand-700">
+                Hand the guild to someone else
+              </button>
+            ) : (
+              <div>
+                <div className="font-sans text-xs text-sand-500 mb-2">
+                  They'll set the goal from the next season on. They can hand it back.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {team.leaderboard.filter(m => m.handle !== team.leaderHandle).map(m => (
+                    // Label carries the verb: a bare handle here would be a
+                    // second button with the same name as that member's
+                    // leaderboard row, which is ambiguous to read and to click.
+                    <button key={m.handle} onClick={() => { setHandingOn(false); onTransfer(m.handle); }}
+                      className="px-3 py-1.5 rounded-xl border-2 border-sand-300 text-sand-700 text-xs hover:border-gold-400">
+                      Hand to {m.handle}
+                    </button>
+                  ))}
+                  <button onClick={() => setHandingOn(false)}
+                    className="px-3 py-1.5 text-xs text-sand-500 hover:text-sand-700">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Panel>
       <button onClick={onLeaveTeam} className="w-full bg-brick-200 hover:bg-brick-400 text-brick-700 font-semibold rounded-xl py-2 text-sm transition-colors">Leave Guild</button>
 
