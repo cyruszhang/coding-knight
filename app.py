@@ -14,6 +14,7 @@ Then visit http://<this-machine's-LAN-IP>:5000 from any device on the
 same network (or the deployed Render URL).
 """
 
+import hashlib
 import json
 import os
 import random
@@ -1179,6 +1180,78 @@ def list_submissions():
     return jsonify([row_to_submission(r) for r in rows])
 
 
+# ---------------- Daily / birthday quests ----------------
+
+DAILY_QUEST_BONUS = 5
+BIRTHDAY_QUEST_MULTIPLIER = 3
+
+
+def _open_task_ids(db, kid_id):
+    """Tasks the kid could still pick up -- nothing already approved or
+    awaiting review."""
+    rows = dbmod.fetchall(db.execute(
+        """SELECT t.id FROM tasks t
+           WHERE t.kid_id=? AND t.status='active'
+             AND NOT EXISTS (
+               SELECT 1 FROM submissions s
+               WHERE s.task_id = t.id AND s.kid_id = t.kid_id
+                 AND s.status IN ('approved', 'pending'))""",
+        (kid_id,),
+    ))
+    return sorted(r["id"] for r in rows)
+
+
+def _quest_pick(kid_id, seed, task_ids):
+    """Deterministic pick, so the same kid and day always land on the same
+    quest -- refreshing can't reroll it into something easier."""
+    if not task_ids:
+        return None
+    digest = hashlib.sha256(f"{kid_id}:{seed}".encode()).hexdigest()
+    return task_ids[int(digest, 16) % len(task_ids)]
+
+
+def todays_quests(db, kid_id):
+    """Today's bonus quests for a kid. Computed rather than stored, so it
+    needs no scheduler and no nightly job -- but that also means callers
+    must resolve it BEFORE inserting a submission, since inserting one
+    removes that task from the open pool and would shift the pick."""
+    today = date.today()
+    day = today.isoformat()
+    ids = _open_task_ids(db, kid_id)
+    daily = _quest_pick(kid_id, day, ids)
+    birthday = None
+    row = dbmod.fetchone(db.execute("SELECT birthday FROM kids WHERE id=?", (kid_id,)))
+    if row and row["birthday"]:
+        try:
+            born = datetime.strptime(row["birthday"], "%Y-%m-%d").date()
+        except ValueError:
+            born = None
+        if born and (born.month, born.day) == (today.month, today.day):
+            # Prefer a different task from the daily one, so the birthday
+            # doesn't just double up on the same quest.
+            pool = [i for i in ids if i != daily] or ids
+            birthday = _quest_pick(kid_id, day + ":birthday", pool)
+    return {
+        "day": day,
+        "daily": daily,
+        "dailyBonus": DAILY_QUEST_BONUS,
+        "birthday": birthday,
+        "birthdayMultiplier": BIRTHDAY_QUEST_MULTIPLIER,
+    }
+
+
+@app.route("/api/quests/today", methods=["GET"])
+@require_family_session
+def get_todays_quests():
+    db = get_db()
+    kid_id = g.kid_id or request.args.get("kid")
+    if not kid_id:
+        return jsonify({"error": "kid required"}), 400
+    if _kid_family_id(db, kid_id) != g.family_id:
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(todays_quests(db, kid_id))
+
+
 @app.route("/api/submissions", methods=["POST"])
 @require_family_session
 def create_submission():
@@ -1193,14 +1266,25 @@ def create_submission():
     sub_id = "sub_" + uuid.uuid4().hex[:10]
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     db = get_db()
+    task = dbmod.fetchone(db.execute(
+        "SELECT difficulty, points FROM tasks WHERE id=?", (data["taskId"],)))
+    # Resolve today's bonus quests before the INSERT: a pending submission
+    # drops the task out of the open pool, which would change the pick.
+    quests = todays_quests(db, g.kid_id)
+    # Points come from the task row and the server's own bonus maths, not
+    # from the request body -- that's the kid's browser talking.
+    points = int(task["points"]) if task else int(data["points"])
+    if quests["birthday"] and data["taskId"] == quests["birthday"]:
+        points *= BIRTHDAY_QUEST_MULTIPLIER
+    elif quests["daily"] and data["taskId"] == quests["daily"]:
+        points += DAILY_QUEST_BONUS
     db.execute(
         """INSERT INTO submissions (id, task_id, title, points, explanation, code, status, submitted_at, kid_id, snapshot, pasted)
            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
-        (sub_id, data["taskId"], data["title"], int(data["points"]),
+        (sub_id, data["taskId"], data["title"], points,
          data.get("explanation", ""), data.get("code", ""), now, data["kidId"], data.get("snapshot"),
          1 if data.get("pasted") else 0),
     )
-    task = dbmod.fetchone(db.execute("SELECT difficulty FROM tasks WHERE id=?", (data["taskId"],)))
     if task and task["difficulty"] == "fundamentals":
         activate_one_reserve_fundamentals_task(db, g.kid_id)
     dbmod.commit_and_sync(db)
