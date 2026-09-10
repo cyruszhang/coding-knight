@@ -805,6 +805,11 @@ def init_db():
     # kid is on at most one team at a time, enforced just by this being
     # a single column rather than a join table.
     _ensure_column(db, "kids", "team_id", "team_id TEXT")
+    # Guild quests run for a window rather than forever. Nullable so teams
+    # created before this still load; a missing window reads as "no quest
+    # running" rather than an error.
+    _ensure_column(db, "teams", "starts_at", "starts_at TEXT")
+    _ensure_column(db, "teams", "ends_at", "ends_at TEXT")
     # Must run after the _ensure_column call above -- kids predates
     # family_id (an existing table gaining a new column), unlike parents,
     # which is created fresh with family_id already in its column list.
@@ -1680,9 +1685,17 @@ def create_team():
     team_id = "team_" + uuid.uuid4().hex[:10]
     code = generate_team_code(db)
     now = datetime.utcnow().isoformat()
+    today = date.today()
+    try:
+        days = int(data.get("days") or DEFAULT_QUEST_DAYS)
+    except (TypeError, ValueError):
+        days = DEFAULT_QUEST_DAYS
+    days = max(1, min(days, 90))
     db.execute(
-        "INSERT INTO teams (id, name, code, goal_points, created_at) VALUES (?, ?, ?, ?, ?)",
-        (team_id, name, code, goal_points, now),
+        """INSERT INTO teams (id, name, code, goal_points, created_at, starts_at, ends_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (team_id, name, code, goal_points, now,
+         today.isoformat(), (today + timedelta(days=days)).isoformat()),
     )
     db.execute("UPDATE kids SET team_id=? WHERE id=?", (team_id, g.kid_id))
     dbmod.commit_and_sync(db)
@@ -1716,6 +1729,136 @@ def leave_team():
     return jsonify({"ok": True})
 
 
+DEFAULT_QUEST_DAYS = 14
+
+
+def _quest_window(team):
+    """A team's current quest window, plus how it stands relative to today."""
+    starts, ends = team["starts_at"], team["ends_at"]
+    if not starts or not ends:
+        return {"startsAt": None, "endsAt": None, "daysLeft": None, "active": False}
+    today = date.today()
+    try:
+        end = datetime.strptime(ends, "%Y-%m-%d").date()
+    except ValueError:
+        return {"startsAt": starts, "endsAt": ends, "daysLeft": None, "active": False}
+    return {
+        "startsAt": starts,
+        "endsAt": ends,
+        "daysLeft": (end - today).days,
+        "active": end >= today,
+    }
+
+
+def _window_leaderboard(db, team_id, starts, ends):
+    """Points each member earned *inside* the quest window.
+
+    Scored on submitted_at, not reviewed_at: the kid controls when they do
+    the work, not when a parent gets round to approving it, so a quest
+    finished on the last day still counts even if it's reviewed later.
+    """
+    if starts and ends:
+        return dbmod.fetchall(db.execute(
+            """SELECT k.handle AS handle,
+                      COALESCE(SUM(CASE WHEN s.status='approved'
+                                         AND substr(s.submitted_at, 1, 10) BETWEEN ? AND ?
+                                        THEN s.points ELSE 0 END), 0) AS points
+               FROM kids k LEFT JOIN submissions s ON s.kid_id = k.id
+               WHERE k.team_id=?
+               GROUP BY k.id
+               ORDER BY points DESC""",
+            (starts, ends, team_id),
+        ))
+    return dbmod.fetchall(db.execute(
+        """SELECT k.handle AS handle,
+                  COALESCE(SUM(CASE WHEN s.status='approved' THEN s.points ELSE 0 END), 0) AS points
+           FROM kids k LEFT JOIN submissions s ON s.kid_id = k.id
+           WHERE k.team_id=?
+           GROUP BY k.id
+           ORDER BY points DESC""",
+        (team_id,),
+    ))
+
+
+def _kid_team(db, kid_id):
+    row = dbmod.fetchone(db.execute("SELECT team_id FROM kids WHERE id=?", (kid_id,)))
+    return row["team_id"] if row and row["team_id"] else None
+
+
+@app.route("/api/teams/quest", methods=["POST"])
+@require_family_session
+def start_team_quest():
+    """Start a fresh guild quest. Any member can kick one off -- the guild
+    is the unit here, and there's no notion of a guild leader."""
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    db = get_db()
+    team_id = _kid_team(db, g.kid_id)
+    if not team_id:
+        return jsonify({"error": "not on a guild"}), 400
+    data = request.get_json(force=True)
+    try:
+        goal_points = int(data.get("goalPoints") or 0)
+        days = int(data.get("days") or DEFAULT_QUEST_DAYS)
+    except (TypeError, ValueError):
+        return jsonify({"error": "goalPoints and days must be numbers"}), 400
+    days = max(1, min(days, 90))
+    today = date.today()
+    db.execute(
+        "UPDATE teams SET goal_points=?, starts_at=?, ends_at=? WHERE id=?",
+        (goal_points, today.isoformat(), (today + timedelta(days=days)).isoformat(), team_id),
+    )
+    dbmod.commit_and_sync(db)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/teams/contributions", methods=["GET"])
+@require_family_session
+def team_member_contributions():
+    """What one guild member finished during the current quest.
+
+    The second deliberate cross-family read, and deliberately narrow: it
+    returns task titles, points and dates only. No code, no explanation,
+    no snapshot, no real name, email or family. Callers must be on the
+    same guild as the handle they're asking about.
+    """
+    if not g.kid_id:
+        return jsonify({"error": "kid login required"}), 403
+    handle = (request.args.get("handle") or "").strip()
+    if not handle:
+        return jsonify({"error": "handle required"}), 400
+    db = get_db()
+    team_id = _kid_team(db, g.kid_id)
+    if not team_id:
+        return jsonify({"error": "not on a guild"}), 403
+    member = dbmod.fetchone(db.execute(
+        "SELECT id, handle, team_id FROM kids WHERE lower(handle)=lower(?)", (handle,)))
+    if not member or member["team_id"] != team_id:
+        return jsonify({"error": "not found"}), 404
+    team = dbmod.fetchone(db.execute("SELECT * FROM teams WHERE id=?", (team_id,)))
+    starts, ends = team["starts_at"], team["ends_at"]
+    if starts and ends:
+        rows = dbmod.fetchall(db.execute(
+            """SELECT title, points, submitted_at FROM submissions
+               WHERE kid_id=? AND status='approved'
+                 AND substr(submitted_at, 1, 10) BETWEEN ? AND ?
+               ORDER BY submitted_at DESC""",
+            (member["id"], starts, ends)))
+    else:
+        rows = dbmod.fetchall(db.execute(
+            """SELECT title, points, submitted_at FROM submissions
+               WHERE kid_id=? AND status='approved'
+               ORDER BY submitted_at DESC LIMIT 25""",
+            (member["id"],)))
+    return jsonify({
+        "handle": member["handle"],
+        "contributions": [
+            {"title": r["title"], "points": r["points"], "on": r["submitted_at"][:10]}
+            for r in rows
+        ],
+    })
+
+
 @app.route("/api/teams/me", methods=["GET"])
 @require_family_session
 def my_team():
@@ -1730,25 +1873,22 @@ def my_team():
         # Team was somehow deleted out from under this kid -- treat as
         # "not on a team" rather than erroring.
         return jsonify({"team": None})
-    # The one deliberate cross-family read in this codebase: every other
-    # query in app.py scopes to g.family_id, but a team leaderboard is
-    # exactly the point here. Only handle + lifetime points leave this
-    # query -- no name, email, family_id, or pin.
-    leaderboard = dbmod.fetchall(db.execute(
-        """SELECT k.handle AS handle,
-                  COALESCE(SUM(CASE WHEN s.status='approved' THEN s.points ELSE 0 END), 0) AS points
-           FROM kids k LEFT JOIN submissions s ON s.kid_id = k.id
-           WHERE k.team_id=?
-           GROUP BY k.id
-           ORDER BY points DESC""",
-        (team["id"],),
-    ))
+    # A deliberate cross-family read: every other query in app.py scopes
+    # to g.family_id, but a guild leaderboard is exactly the point here.
+    # Only handle + points leave this query -- no name, email, family_id
+    # or pin.
+    window = _quest_window(team)
+    leaderboard = _window_leaderboard(db, team["id"], team["starts_at"], team["ends_at"])
     return jsonify({
         "team": {
             "id": team["id"],
             "name": team["name"],
             "code": team["code"],
             "goalPoints": team["goal_points"],
+            "startsAt": window["startsAt"],
+            "endsAt": window["endsAt"],
+            "daysLeft": window["daysLeft"],
+            "questActive": window["active"],
             "leaderboard": [{"handle": r["handle"], "points": r["points"]} for r in leaderboard],
         }
     })
