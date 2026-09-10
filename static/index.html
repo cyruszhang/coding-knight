@@ -1003,12 +1003,25 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, sentBack
 const SKILL_ALIASES = { random_library: "randomness", simple_math: "variables" };
 function canonicalSkill(sk) { return SKILL_ALIASES[sk] || sk; }
 
-const SKILL_NODE_STYLE = {
-  mastered: { glyph: "\u25a0", color: "#55824A", border: "#55824A", bg: "#55824A18" },
-  started:  { glyph: "\u25d0", color: "#B3872F", border: "#B3872F", bg: "#B3872F18" },
-  open:     { glyph: "",        color: "#8A7660", border: "#C7B394", bg: "#ffffff" },
-  locked:   { glyph: "\u25a1", color: "#C7B394", border: "#E4D3B4", bg: "#00000008" },
+// One metaphor, not three. The old set mixed a filled square for
+// mastered, a half circle for started and an outlined square for locked,
+// so "mastered" read as an arbitrary dot and locked looked like a
+// cousin of it. These are a single fill scale -- empty, filling, full --
+// which is the reading the half circle already got right, and the count
+// drives it so the node shows real progress toward mastery.
+const SKILL_NODE_COLORS = {
+  mastered: { color: "#55824A", border: "#55824A", bg: "#55824A18" },
+  started:  { color: "#B3872F", border: "#B3872F", bg: "#B3872F18" },
+  open:     { color: "#8A7660", border: "#C7B394", bg: "#ffffff" },
+  locked:   { color: "#C7B394", border: "#E4D3B4", bg: "#00000008" },
 };
+
+function skillGlyph(sk, threshold) {
+  if (sk.state === "locked") return "\u00d7";
+  if (sk.approved >= threshold) return "\u25cf";
+  if (sk.approved <= 0) return "\u25cb";
+  return sk.approved / threshold >= 0.5 ? "\u25d1" : "\u25d4";
+}
 
 // The map itself: one band per tier, skills strung along it. Nodes wrap
 // rather than scroll sideways -- a trail that runs off the edge of a
@@ -1021,8 +1034,14 @@ function SkillTrail({ skillMap, onOpen }) {
           <div className="text-xs text-sand-600 tracking-widest">SKILL MAP</div>
           <div className="text-sand-800">{skillMap.mastered} / {skillMap.total}</div>
         </div>
-        <div className="font-sans text-xs text-sand-500">
+        <div className="font-sans text-xs text-sand-500 mb-3">
           Every quest you finish fills in a skill. Three finished masters it.
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sand-500">
+          <span>○ not started</span>
+          <span style={{ color: "#B3872F" }}>◔ ◑ in progress</span>
+          <span style={{ color: "#55824A" }}>● mastered</span>
+          <span style={{ color: "#C7B394" }}>× nothing here yet</span>
         </div>
       </Panel>
 
@@ -1041,7 +1060,7 @@ function SkillTrail({ skillMap, onOpen }) {
                 with a dangling connector. */}
             <div className="grid grid-cols-3 gap-y-3">
               {tier.skills.map((sk, i) => {
-                const st = SKILL_NODE_STYLE[sk.state];
+                const st = SKILL_NODE_COLORS[sk.state];
                 const isToday = sk.id === skillMap.skillOfTheDay;
                 const endsRow = i % 3 === 2 || i === tier.skills.length - 1;
                 return (
@@ -1052,7 +1071,7 @@ function SkillTrail({ skillMap, onOpen }) {
                         style={{ color: st.color, borderColor: isToday ? "#D6A53D" : st.border,
                                  background: st.bg, fontSize: "17px",
                                  boxShadow: isToday ? "0 0 0 2px #D6A53D55" : "none" }}>
-                        {st.glyph}
+                        {skillGlyph(sk, skillMap.masteryThreshold)}
                       </span>
                       <span className="text-[9px] leading-tight text-center"
                         style={{ color: sk.state === "locked" ? "#C7B394" : "#6B5A48" }}>{sk.short}</span>
