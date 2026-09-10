@@ -772,7 +772,7 @@ function MysteryBox({ variant = "red", size = 84 }) {
   return <img src={"/mystery-chest-" + variant + ".png"} alt="" style={{ width: size }} className="h-auto" />;
 }
 
-function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit }) {
+function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, sentBack = {}, onSubmit }) {
   const [boxes, setBoxes] = useState(() => pickMysteryTasks(available, kidTasks, kidSubmissions));
   const [variants, setVariants] = useState(() => shuffle(CHEST_VARIANTS).slice(0, boxes.length));
   const [openedIndex, setOpenedIndex] = useState(null);
@@ -851,8 +851,12 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
     return <div className="text-sand-500 text-sm italic">All caught up — ask Dad for new tasks.</div>;
   }
 
-  const totalPages = Math.max(1, Math.ceil(available.length / PAGE_SIZE));
-  const pageItems = available.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  // Sent-back work first, so it lands on page 1 rather than being
+  // buried somewhere in the middle of 40-odd quests.
+  const browseOrder = available.filter(t => sentBack[t.id] !== undefined)
+    .concat(available.filter(t => sentBack[t.id] === undefined));
+  const totalPages = Math.max(1, Math.ceil(browseOrder.length / PAGE_SIZE));
+  const pageItems = browseOrder.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <div>
@@ -874,7 +878,7 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, onSubmit
               const d = DIFFICULTY[task.difficulty];
               return (
                 <TaskRow key={task.id} title={task.title} points={task.points}
-                  vehicle={task.vehicle} difficulty={task.difficulty}
+                  vehicle={task.vehicle} difficulty={task.difficulty} sentBackNote={sentBack[task.id]}
                   badge={<span className="text-[10px] px-2 py-0.5 rounded-full inline-block" style={{ color: d.color, border: "1px solid " + d.color + "55" }}>{d.label}</span>}
                   onClick={() => { setOpenedIndex(null); startTask(task); }} />
               );
@@ -972,7 +976,7 @@ const FUNDAMENTALS_ORDER = ["variables", "type_casting", "loops_basic", "conditi
 // just a plain list straight into SubmitModal. No `tip` prop is passed
 // (SubmitModal already renders nothing when tip is falsy) -- the whole
 // point of this section is an unaided recall check, not a lookup.
-function FundamentalsPractice({ kidId, tasks, onSubmit }) {
+function FundamentalsPractice({ kidId, tasks, sentBack = {}, onSubmit }) {
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
   const [code, setCode] = useState("");
@@ -982,9 +986,14 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
   // flatMap (not map+find) -- a skill can now have several practice
   // questions, not just one, so every match for a skill shows up,
   // grouped together in FUNDAMENTALS_ORDER's order.
-  const ordered = FUNDAMENTALS_ORDER
+  const bySkill = FUNDAMENTALS_ORDER
     .flatMap(skillId => tasks.filter(t => t.skills && t.skills.includes(skillId)))
     .concat(tasks.filter(t => !isRecognized(t)));
+  // Anything a parent sent back floats to the top, ahead of the skill
+  // ordering -- it already has feedback waiting on it, so it's the most
+  // useful thing to pick up next.
+  const ordered = bySkill.filter(t => sentBack[t.id] !== undefined)
+    .concat(bySkill.filter(t => sentBack[t.id] === undefined));
 
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);
@@ -1004,7 +1013,8 @@ function FundamentalsPractice({ kidId, tasks, onSubmit }) {
       <div className="grid gap-2">
         {ordered.map(task => (
           <TaskRow key={task.id} title={task.title} points={task.points}
-            vehicle={task.vehicle} difficulty={task.difficulty} onClick={() => startTask(task)} />
+            vehicle={task.vehicle} difficulty={task.difficulty} sentBackNote={sentBack[task.id]}
+            onClick={() => startTask(task)} />
         ))}
       </div>
 
@@ -1332,18 +1342,29 @@ function Panel({ children, className = "" }) {
 // difference between the two editors a kid lands in), and how hard it
 // is, via the tile's tint. That's why a plain title-and-points row read
 // as featureless: it was showing one of the four facts a task has.
-function TaskRow({ title, points, badge, vehicle, difficulty, onClick }) {
+function TaskRow({ title, points, badge, vehicle, difficulty, sentBackNote, onClick }) {
   const d = DIFFICULTY[difficulty] || DIFFICULTY.easy;
   const isJudge = vehicle === "judge";
+  // A sent-back task overrides the difficulty tint: "this one needs
+  // another go" matters more right now than how hard it is.
+  const tint = sentBackNote !== undefined ? "#C15B3F" : d.color;
   return (
     <button onClick={onClick}
-      className="w-full flex items-center gap-3 py-2.5 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 transition-colors">
+      className="w-full flex items-start gap-3 py-2.5 px-2 border-b border-sand-300/50 last:border-0 text-left hover:bg-sand-200/30 transition-colors">
       <span aria-hidden="true"
         className="shrink-0 w-8 h-8 rounded-lg border-2 flex items-center justify-center text-sm"
-        style={{ color: d.color, borderColor: d.color + "55", background: d.color + "14" }}>
+        style={{ color: tint, borderColor: tint + "55", background: tint + "14" }}>
         {isJudge ? "⌘" : "◈"}
       </span>
-      <span className="font-display font-normal text-sm text-sand-800 min-w-0 flex-1">{title}</span>
+      <span className="min-w-0 flex-1">
+        <span className="font-display font-normal text-sm text-sand-800 block">{title}</span>
+        {sentBackNote !== undefined && (
+          <span className="block mt-1">
+            <span className="text-[10px] tracking-wide px-2 py-0.5 rounded-full inline-block text-brick-700 border border-brick-400">SENT BACK</span>
+            {sentBackNote && <span className="font-sans text-xs text-sand-600 italic block mt-1">"{sentBackNote}"</span>}
+          </span>
+        )}
+      </span>
       {badge && <span className="shrink-0">{badge}</span>}
       <span className="text-brand-700 text-sm flex items-center gap-1 shrink-0"><IconStar size={12} />{points}</span>
     </button>
@@ -1450,6 +1471,18 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
     const s = taskStatus(t.id, kid.id);
     return !s || s.status === "rejected";
   });
+  // Work a parent sent back, keyed by task id -> their note. Only the
+  // *latest* submission counts: a task rejected once and later approved
+  // is finished, not outstanding. kidSubmissions is chronological, the
+  // same assumption taskStatus already makes by reading the last entry.
+  const sentBack = {};
+  const latestByTask = {};
+  kidSubmissions.forEach(s => { latestByTask[s.taskId] = s; });
+  Object.keys(latestByTask).forEach(taskId => {
+    if (latestByTask[taskId].status === "rejected") {
+      sentBack[taskId] = latestByTask[taskId].reviewNote || "";
+    }
+  });
   const fundamentals = available.filter(t => t.difficulty === "fundamentals");
   const pending = kidSubmissions.filter(s => s.status === "pending");
   const approved = kidSubmissions.filter(s => s.status === "approved");
@@ -1472,7 +1505,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
           </div>
           <Panel>
             <div className="text-xs text-sand-600 tracking-widest mb-3">SEALED CHESTS</div>
-            <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} onSubmit={onSubmit} />
+            <MysteryBoxPicker kidId={kid.id} available={available} kidTasks={kidTasks} kidSubmissions={kidSubmissions} sentBack={sentBack} onSubmit={onSubmit} />
           </Panel>
         </div>
       )}
@@ -1481,7 +1514,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
         fundamentals.length > 0 ? (
           <Panel>
             <div className="text-xs text-sand-600 tracking-widest mb-3">FUNDAMENTALS PRACTICE</div>
-            <FundamentalsPractice kidId={kid.id} tasks={fundamentals} onSubmit={onSubmit} />
+            <FundamentalsPractice kidId={kid.id} tasks={fundamentals} sentBack={sentBack} onSubmit={onSubmit} />
           </Panel>
         ) : (
           <Panel>
