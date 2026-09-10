@@ -1824,6 +1824,49 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
 // Collapsed by default for an archive-y list (completed work); the
 // caller decides per-section since "saved" and "pending" are usually
 // small and worth seeing right away, while "completed" only grows.
+// Finished work, six at a time. These categories open by default now --
+// collapsed-by-default meant the most rewarding part of the app (the
+// drawings a kid actually made) was hidden behind a tap, but twenty-odd
+// thumbnails at once buries everything else on the tab, so it pages.
+const COMPLETED_PAGE_SIZE = 6;
+
+function CompletedGrid({ items, onOpen }) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(items.length / COMPLETED_PAGE_SIZE));
+  // Guard against a page going out of range when items shrink (a task
+  // re-reviewed, say) -- clamp rather than render an empty grid.
+  const current = Math.min(page, totalPages - 1);
+  const shown = items.slice(current * COMPLETED_PAGE_SIZE, current * COMPLETED_PAGE_SIZE + COMPLETED_PAGE_SIZE);
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-2">
+        {shown.map(s => (
+          <button key={s.id} onClick={() => onOpen(s)} className="flex flex-col items-center gap-1 text-left">
+            {s.snapshot ? (
+              <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors" />
+            ) : (
+              <div className="w-full aspect-square flex items-center justify-center bg-sand-100/40 rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors">
+                <IconCheck size={20} className="text-brand-700" />
+              </div>
+            )}
+            <span className="text-xs text-sand-600 text-center leading-tight">{s.title}</span>
+            <span className="text-xs text-brand-700">+{s.points}</span>
+          </button>
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-3 text-sm">
+          <button disabled={current === 0} onClick={() => setPage(current - 1)}
+            className="px-3 py-1.5 rounded-xl border-2 border-sand-300 text-sand-600 disabled:opacity-30">← Prev</button>
+          <span className="text-xs text-sand-500">Page {current + 1} of {totalPages}</span>
+          <button disabled={current >= totalPages - 1} onClick={() => setPage(current + 1)}
+            className="px-3 py-1.5 rounded-xl border-2 border-sand-300 text-sand-600 disabled:opacity-30">Next →</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategoryGroup({ title, count, defaultOpen, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -1931,22 +1974,8 @@ function HistoryPanel({ kidId, kidTasks, pending, approved, onSubmit }) {
         <Panel>
           <div className="text-xs text-sand-600 tracking-widest mb-3">COMPLETED ({approved.length})</div>
           {CATEGORY_ORDER.filter(cat => completedGroups[cat]).map(cat => (
-            <CategoryGroup key={cat} title={cat} count={completedGroups[cat].length} defaultOpen={false}>
-              <div className="grid grid-cols-3 gap-2">
-                {completedGroups[cat].map(s => (
-                  <button key={s.id} onClick={() => setViewingCompleted(s)} className="flex flex-col items-center gap-1 text-left">
-                    {s.snapshot ? (
-                      <img src={s.snapshot} alt={s.title} className="w-full aspect-square object-contain bg-white rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors" />
-                    ) : (
-                      <div className="w-full aspect-square flex items-center justify-center bg-sand-100/40 rounded-xl border border-sand-300/50 hover:border-brand-300/60 transition-colors">
-                        <IconCheck size={20} className="text-brand-700" />
-                      </div>
-                    )}
-                    <span className="text-xs text-sand-600 text-center leading-tight">{s.title}</span>
-                    <span className="text-xs text-brand-700">+{s.points}</span>
-                  </button>
-                ))}
-              </div>
+            <CategoryGroup key={cat} title={cat} count={completedGroups[cat].length} defaultOpen={true}>
+              <CompletedGrid items={completedGroups[cat]} onOpen={setViewingCompleted} />
             </CategoryGroup>
           ))}
         </Panel>
