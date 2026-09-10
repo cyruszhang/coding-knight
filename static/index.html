@@ -1026,6 +1026,104 @@ function skillGlyph(sk, threshold) {
 // The map itself: one band per tier, skills strung along it. Nodes wrap
 // rather than scroll sideways -- a trail that runs off the edge of a
 // phone is a trail nobody reads.
+// Free play: the editor and turtle canvas with no task attached, so
+// nothing is graded, submitted or worth points. Deliberately not built
+// on SubmitModal -- that component is task-shaped all the way through
+// (brief, explanation gate, submit, paste flagging), and the whole point
+// here is that none of that applies. Code persists in localStorage so a
+// drawing survives a reload.
+const SANDBOX_KEY = kidId => "codequest:sandbox:" + kidId;
+// Opens on something that actually draws, so the first Run produces a
+// picture rather than a blank canvas and a shrug.
+const SANDBOX_STARTER = 'import turtle\n\npen = turtle.Turtle()\npen.color("teal")\n\nfor i in range(4):\n    pen.forward(80)\n    pen.right(90)\n\n# Change anything you like, then press Run.\n';
+
+function SandboxModal({ kidId, onClose }) {
+  const [code, setCode] = useState(() => {
+    try { return localStorage.getItem(SANDBOX_KEY(kidId)) || SANDBOX_STARTER; }
+    catch (e) { return SANDBOX_STARTER; }
+  });
+  const [running, setRunning] = useState(false);
+  const [output, setOutput] = useState("");
+  const [runError, setRunError] = useState(null);
+  const { slideClass, leave } = useSlideIn();
+  const stoppedRef = useRef(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(SANDBOX_KEY(kidId), code); } catch (e) {}
+  }, [code, kidId]);
+
+  async function handleRun() {
+    setRunError(null);
+    setOutput("");
+    setRunning(true);
+    stoppedRef.current = false;
+    let out = "";
+    try {
+      const result = await runPython(code, "sandbox-target", (text) => { out += text; setOutput(out); });
+      if (!result.ok && !stoppedRef.current) setRunError(result.error);
+    } catch (e) {
+      if (!stoppedRef.current) setRunError(e.message || String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function handleStop() {
+    stoppedRef.current = true;
+    Sk.execLimit = 0;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={GRID_BG}>
+      <TopBanner />
+      <div className={slideClass}>
+        <div className="max-w-3xl mx-auto px-4 pb-16 text-sand-900">
+          <TopBar onBack={() => leave(onClose)} backLabel="Back" label="FREE PLAY" />
+          <Panel className="mb-4">
+            <div className="text-xs text-sand-600 tracking-widest mb-1">FREE PLAY</div>
+            <div className="font-sans text-sm text-sand-600">
+              No quest, no points, nothing to hand in. Draw whatever you want.
+            </div>
+          </Panel>
+
+          <div className="mb-4">
+            <label className="font-sans text-sm text-sand-700 mb-2 block">Your code</label>
+            <Editor value={code} onChange={setCode} />
+            {running ? (
+              <button onClick={handleStop}
+                className="mt-2 w-full bg-brick-500 hover:bg-brick-400 text-white font-semibold rounded-xl py-2 text-sm">
+                ■ Stop
+              </button>
+            ) : (
+              <button onClick={handleRun}
+                className="mt-2 w-full bg-brand-400 text-sand-900 font-semibold rounded-xl py-2 text-sm flex items-center justify-center gap-1">
+                <IconZap size={14} /> Run
+              </button>
+            )}
+          </div>
+
+          {runError && (
+            <div className="mb-4 rounded-xl border border-brick-400/40 bg-brick-500/10 px-3 py-2 text-xs text-brick-700 font-mono whitespace-pre-wrap">{runError}</div>
+          )}
+          {output && (
+            <div className="mb-4">
+              <label className="font-sans text-sm text-sand-700 mb-2 block">Output</label>
+              <pre className="text-xs font-mono text-brand-700 rounded-xl p-3 border border-sand-300 bg-white overflow-x-auto whitespace-pre-wrap">{output}</pre>
+            </div>
+          )}
+
+          <div className="mb-4">
+            <label className="font-sans text-sm text-sand-700 mb-2 block">Your drawing</label>
+            <div id="sandbox-target" tabIndex={0}
+              className="w-full bg-white rounded-xl border border-sand-400 outline-none"
+              style={{ minHeight: 420 }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SkillTrail({ skillMap, onOpen }) {
   return (
     <div className="space-y-4">
@@ -1095,6 +1193,7 @@ function romanTier(n) { return ["", "I", "II", "III", "IV"][n] || String(n); }
 
 function FundamentalsPractice({ kidId, tasks, sentBack = {}, skillMap, onSubmit }) {
   const [openSkill, setOpenSkill] = useState(null);
+  const [sandbox, setSandbox] = useState(false);
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
   const [code, setCode] = useState("");
@@ -1123,8 +1222,22 @@ function FundamentalsPractice({ kidId, tasks, sentBack = {}, skillMap, onSubmit 
   return (
     <div>
       {!openSkill && skillMap && (
-        <SkillTrail skillMap={skillMap} onOpen={setOpenSkill} />
+        <div className="space-y-4">
+          <SkillTrail skillMap={skillMap} onOpen={setOpenSkill} />
+          <Panel>
+            <div className="text-xs text-sand-600 tracking-widest mb-1">FREE PLAY</div>
+            <div className="font-sans text-xs text-sand-500 mb-3">
+              No quest, no points. Just a blank canvas to mess about on.
+            </div>
+            <button onClick={() => setSandbox(true)}
+              className="w-full bg-sand-300 hover:bg-sand-400 text-sand-800 font-semibold rounded-xl py-2 text-sm transition-colors">
+              Open the sandbox
+            </button>
+          </Panel>
+        </div>
       )}
+
+      {sandbox && <SandboxModal kidId={kidId} onClose={() => setSandbox(false)} />}
 
       {openSkill && (
         <Panel>
@@ -1959,15 +2072,37 @@ function MePanel({ kid, submissions, onLogout, skillMap, balance, minutesAvailab
   const counts = {};
   days.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
 
+  // A streak that dies to one holiday stops motivating anyone, so one
+  // missed day per calendar month doesn't end it. This is a rule rather
+  // than a consumable -- derived from the submission dates every time --
+  // so there's no freeze balance to store, spend, or restore.
+  const FREEZES_PER_MONTH = 1;
   let streak = 0;
+  let skipped = 0;
+  const freezesUsed = {};
   let cursor = new Date();
   // If nothing submitted yet today, start counting from yesterday so an
   // in-progress day doesn't zero out a streak earned on prior days.
   if (!counts[todayStr()]) cursor.setDate(cursor.getDate() - 1);
-  while (true) {
+  // Bounded: two missed days inside one month always ends the walk, so
+  // this can't run away, but the cap makes that guarantee explicit.
+  let pendingFreezes = 0;
+  for (let guard = 0; guard < 800; guard++) {
     const key = cursor.toISOString().slice(0, 10);
-    if (!counts[key]) break;
-    streak++;
+    if (counts[key]) {
+      streak++;
+      // Only now are those freezes real: they bridged a gap between two
+      // active days. Held pending until proven, otherwise the walk burns
+      // one on the empty day *before* a streak began and reports a
+      // skipped day to someone whose run was never actually broken.
+      skipped += pendingFreezes;
+      pendingFreezes = 0;
+    } else {
+      const month = key.slice(0, 7);
+      if ((freezesUsed[month] || 0) >= FREEZES_PER_MONTH) break;
+      freezesUsed[month] = (freezesUsed[month] || 0) + 1;
+      pendingFreezes++;
+    }
     cursor.setDate(cursor.getDate() - 1);
   }
 
@@ -2061,6 +2196,11 @@ function MePanel({ kid, submissions, onLogout, skillMap, balance, minutesAvailab
       <Panel>
         <div className="text-xs text-sand-600 tracking-widest mb-2">STREAK</div>
         <div className="text-3xl text-gold-700"><span className="font-bold">{streak}</span> <span className="text-sm text-sand-500 font-normal">day{streak === 1 ? "" : "s"}</span></div>
+        {skipped > 0 && (
+          <div className="font-sans text-xs text-sand-500 mt-1">
+            {skipped === 1 ? "a skipped day is covered" : skipped + " skipped days are covered"} — you get one a month
+          </div>
+        )}
       </Panel>
       <Panel>
         <div className="text-xs text-sand-600 tracking-widest mb-3">ACTIVITY</div>
