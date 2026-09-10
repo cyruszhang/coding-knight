@@ -2096,10 +2096,11 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
           <div className="font-mono text-xs text-sand-500">code: {team.code}</div>
         </div>
         {team.endsAt && (
-          <div className={"text-xs mb-2 " + (team.questActive ? "text-gold-700" : "text-brick-700")}>
+          <div className={"text-xs mb-2 " + (team.questActive ? "text-gold-700" : "text-sand-500")}>
+            {team.season ? "SEASON " + team.season + " · " : ""}
             {team.questActive
-              ? (team.daysLeft === 0 ? "Last day of this quest!" : team.daysLeft + " days left \u00b7 ends " + team.endsAt)
-              : "This quest ended on " + team.endsAt}
+              ? (team.daysLeft === 0 ? "last day!" : team.daysLeft + " days left")
+              : "finished " + team.endsAt}
           </div>
         )}
         <div className="text-xs text-sand-500 mb-2">{totalPoints} / {team.goalPoints} points{pct >= 100 ? " -- GOAL REACHED! 🎉" : ""}</div>
@@ -2110,7 +2111,8 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
         {!team.questActive && (
           <div className="mt-3">
             <div className="font-sans text-xs text-sand-500 mb-2">
-              Start a new quest and the guild's points begin again from zero.
+              Season {team.season || 0} is in the books. Start the next one — nothing
+              already earned is lost.
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-sand-500">Goal</span>
@@ -2123,11 +2125,32 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam, on
             </div>
             <button onClick={() => onStartQuest(Number(newGoal) || 0, Number(newDays) || 14)}
               className="mt-2 w-full bg-gold-500 hover:bg-gold-400 text-sand-900 font-semibold rounded-xl py-2 text-sm transition-colors">
-              Start a new quest
+              Start season {(team.season || 0) + 1}
             </button>
           </div>
         )}
+        {team.questActive && team.startedBy && (
+          <div className="font-sans text-[10px] text-sand-400 mt-2">
+            started by {team.startedBy} — locked in until it ends
+          </div>
+        )}
       </Panel>
+
+      {team.history && team.history.length > 0 && (
+        <Panel>
+          <div className="text-xs text-sand-600 tracking-widest mb-3">PAST SEASONS</div>
+          {team.history.map(h => (
+            <div key={h.season} className="flex items-center justify-between py-1.5 border-b border-sand-300/50 last:border-0 gap-2">
+              <span className="text-sm text-sand-700 shrink-0">Season {h.season}</span>
+              <span className="text-[10px] text-sand-400 min-w-0 flex-1 text-center">{h.endsAt}</span>
+              <span className="text-xs text-sand-600 shrink-0">{h.points} / {h.goalPoints}</span>
+              <span className={"text-[10px] tracking-wide shrink-0 " + (h.met ? "text-brand-700" : "text-sand-400")}>
+                {h.met ? "BEATEN" : "FELL SHORT"}
+              </span>
+            </div>
+          ))}
+        </Panel>
+      )}
       <Panel>
         <div className="text-xs text-sand-600 tracking-widest mb-3">LEADERBOARD</div>
         <div className="font-sans text-xs text-sand-500 mb-2">Tap anyone to see what they contributed.</div>

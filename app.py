@@ -772,6 +772,17 @@ def init_db():
             created_at TEXT NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_code ON teams(code);
+        CREATE TABLE IF NOT EXISTS team_quests (
+            id TEXT PRIMARY KEY,
+            team_id TEXT NOT NULL,
+            season INTEGER NOT NULL,
+            goal_points INTEGER NOT NULL DEFAULT 0,
+            starts_at TEXT NOT NULL,
+            ends_at TEXT NOT NULL,
+            started_by TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_team_quests_team ON team_quests(team_id);
         """
     )
     for table in ("tasks", "submissions", "redemptions"):
@@ -814,6 +825,22 @@ def init_db():
     # family_id (an existing table gaining a new column), unlike parents,
     # which is created fresh with family_id already in its column list.
     db.execute("CREATE INDEX IF NOT EXISTS idx_kids_family_id ON kids(family_id)")
+    # Guild quests used to be three mutable columns on the team row, so a
+    # new quest overwrote the old one and the previous result was simply
+    # forgotten. Seasons are rows instead. Fold any existing window into
+    # season 1 -- idempotent, since init_db runs on every worker boot.
+    for t in dbmod.fetchall(db.execute(
+            "SELECT id, goal_points, starts_at, ends_at, created_at FROM teams "
+            "WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL")):
+        existing = dbmod.fetchone(db.execute(
+            "SELECT 1 FROM team_quests WHERE team_id=?", (t["id"],)))
+        if existing:
+            continue
+        db.execute(
+            """INSERT INTO team_quests (id, team_id, season, goal_points, starts_at, ends_at, started_by, created_at)
+               VALUES (?, ?, 1, ?, ?, ?, NULL, ?)""",
+            ("tq_" + uuid.uuid4().hex[:10], t["id"], t["goal_points"],
+             t["starts_at"], t["ends_at"], t["created_at"]))
     dbmod.commit_and_sync(db)
     db.close()
 
@@ -1697,6 +1724,14 @@ def create_team():
         (team_id, name, code, goal_points, now,
          today.isoformat(), (today + timedelta(days=days)).isoformat()),
     )
+    founder = dbmod.fetchone(db.execute("SELECT handle FROM kids WHERE id=?", (g.kid_id,)))
+    db.execute(
+        """INSERT INTO team_quests (id, team_id, season, goal_points, starts_at, ends_at, started_by, created_at)
+           VALUES (?, ?, 1, ?, ?, ?, ?, ?)""",
+        ("tq_" + uuid.uuid4().hex[:10], team_id, goal_points,
+         today.isoformat(), (today + timedelta(days=days)).isoformat(),
+         founder["handle"] if founder else None, now),
+    )
     db.execute("UPDATE kids SET team_id=? WHERE id=?", (team_id, g.kid_id))
     dbmod.commit_and_sync(db)
     return jsonify({"id": team_id, "name": name, "code": code, "goalPoints": goal_points}), 201
@@ -1732,21 +1767,27 @@ def leave_team():
 DEFAULT_QUEST_DAYS = 14
 
 
-def _quest_window(team):
-    """A team's current quest window, plus how it stands relative to today."""
-    starts, ends = team["starts_at"], team["ends_at"]
-    if not starts or not ends:
-        return {"startsAt": None, "endsAt": None, "daysLeft": None, "active": False}
-    today = date.today()
+def _seasons(db, team_id):
+    """Every season a guild has run, newest first."""
+    return dbmod.fetchall(db.execute(
+        "SELECT * FROM team_quests WHERE team_id=? ORDER BY season DESC", (team_id,)))
+
+
+def _season_window(season):
+    """How a season stands relative to today."""
+    if not season:
+        return {"season": None, "startsAt": None, "endsAt": None, "daysLeft": None, "active": False}
     try:
-        end = datetime.strptime(ends, "%Y-%m-%d").date()
-    except ValueError:
-        return {"startsAt": starts, "endsAt": ends, "daysLeft": None, "active": False}
+        end = datetime.strptime(season["ends_at"], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return {"season": season["season"], "startsAt": season["starts_at"],
+                "endsAt": season["ends_at"], "daysLeft": None, "active": False}
     return {
-        "startsAt": starts,
-        "endsAt": ends,
-        "daysLeft": (end - today).days,
-        "active": end >= today,
+        "season": season["season"],
+        "startsAt": season["starts_at"],
+        "endsAt": season["ends_at"],
+        "daysLeft": (end - date.today()).days,
+        "active": end >= date.today(),
     }
 
 
@@ -1803,10 +1844,23 @@ def start_team_quest():
     except (TypeError, ValueError):
         return jsonify({"error": "goalPoints and days must be numbers"}), 400
     days = max(1, min(days, 90))
+    seasons = _seasons(db, team_id)
+    current = _season_window(seasons[0] if seasons else None)
+    # A running season is untouchable. This is the whole point of seasons:
+    # with no way to overwrite one, there's nothing for a guild leader to
+    # need to protect, and no member can move the goalposts on the others.
+    if current["active"]:
+        return jsonify({"error": "a season is already running",
+                        "endsAt": current["endsAt"]}), 409
+    kid = dbmod.fetchone(db.execute("SELECT handle FROM kids WHERE id=?", (g.kid_id,)))
     today = date.today()
     db.execute(
-        "UPDATE teams SET goal_points=?, starts_at=?, ends_at=? WHERE id=?",
-        (goal_points, today.isoformat(), (today + timedelta(days=days)).isoformat(), team_id),
+        """INSERT INTO team_quests (id, team_id, season, goal_points, starts_at, ends_at, started_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("tq_" + uuid.uuid4().hex[:10], team_id,
+         (seasons[0]["season"] + 1) if seasons else 1,
+         goal_points, today.isoformat(), (today + timedelta(days=days)).isoformat(),
+         kid["handle"] if kid else None, datetime.utcnow().isoformat()),
     )
     dbmod.commit_and_sync(db)
     return jsonify({"ok": True})
@@ -1835,8 +1889,10 @@ def team_member_contributions():
         "SELECT id, handle, team_id FROM kids WHERE lower(handle)=lower(?)", (handle,)))
     if not member or member["team_id"] != team_id:
         return jsonify({"error": "not found"}), 404
-    team = dbmod.fetchone(db.execute("SELECT * FROM teams WHERE id=?", (team_id,)))
-    starts, ends = team["starts_at"], team["ends_at"]
+    seasons = _seasons(db, team_id)
+    current = seasons[0] if seasons else None
+    starts = current["starts_at"] if current else None
+    ends = current["ends_at"] if current else None
     if starts and ends:
         rows = dbmod.fetchall(db.execute(
             """SELECT title, points, submitted_at FROM submissions
@@ -1877,19 +1933,45 @@ def my_team():
     # to g.family_id, but a guild leaderboard is exactly the point here.
     # Only handle + points leave this query -- no name, email, family_id
     # or pin.
-    window = _quest_window(team)
-    leaderboard = _window_leaderboard(db, team["id"], team["starts_at"], team["ends_at"])
+    seasons = _seasons(db, team["id"])
+    current = seasons[0] if seasons else None
+    window = _season_window(current)
+    goal = current["goal_points"] if current else team["goal_points"]
+    leaderboard = _window_leaderboard(
+        db, team["id"],
+        current["starts_at"] if current else None,
+        current["ends_at"] if current else None)
+
+    # Finished seasons keep their final standing. Recomputed from the
+    # submissions in each window rather than stored, so a late approval
+    # still lands in the season the work was actually done in.
+    history = []
+    for past in seasons[1:][:6]:
+        rows = _window_leaderboard(db, team["id"], past["starts_at"], past["ends_at"])
+        total = sum(r["points"] for r in rows)
+        history.append({
+            "season": past["season"],
+            "goalPoints": past["goal_points"],
+            "points": total,
+            "startsAt": past["starts_at"],
+            "endsAt": past["ends_at"],
+            "met": past["goal_points"] > 0 and total >= past["goal_points"],
+        })
+
     return jsonify({
         "team": {
             "id": team["id"],
             "name": team["name"],
             "code": team["code"],
-            "goalPoints": team["goal_points"],
+            "goalPoints": goal,
+            "season": window["season"],
             "startsAt": window["startsAt"],
             "endsAt": window["endsAt"],
             "daysLeft": window["daysLeft"],
             "questActive": window["active"],
+            "startedBy": current["started_by"] if current else None,
             "leaderboard": [{"handle": r["handle"], "points": r["points"]} for r in leaderboard],
+            "history": history,
         }
     })
 
