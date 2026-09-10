@@ -1240,6 +1240,126 @@ def todays_quests(db, kid_id):
     }
 
 
+# ---------------- Skill map ----------------
+
+# curriculum.py is the single source of truth for the taxonomy. It used
+# to be imported only by curate_tasks.py (an offline script), so the
+# frontend grew its own hardcoded FUNDAMENTALS_ORDER list that drifted:
+# it carried a skill with no tasks at all, duplicated `randomness` under
+# a second name, and omitted `shapes` and `colors` -- 117 tasks the
+# Practice tab simply never showed. Serving the real taxonomy from here
+# means there is only one list to keep correct.
+from curriculum import SKILLS
+
+TIER_NAMES = {1: "THE FOUNDATIONS", 2: "THE DEEP WOODS", 3: "THE SUMMIT"}
+
+# curriculum.py's labels are written for a curation prompt ("Text vs.
+# numbers (type conversion)") and are far too long for a map node in a
+# near-monospaced pixel font. These are the node captions; the full label
+# still shows once a skill is opened.
+SHORT_LABELS = {
+    "variables": "VARS", "type_casting": "TYPES", "shapes": "SHAPES",
+    "colors": "COLORS", "loops_basic": "LOOPS", "lists": "LISTS",
+    "parameters": "PARAMS", "nested_loops": "NESTED", "conditionals": "LOGIC",
+    "randomness": "RANDOM", "functions": "FUNCS", "recursion": "RECURSE",
+    "event_handling": "KEYS", "dynamic_programming": "MEMO",
+}
+
+# Historical tags that predate the taxonomy. random_library is plainly
+# the same thing as randomness; simple_math is arithmetic on variables.
+# Folding them in beats dropping the tasks that carry them.
+SKILL_ALIASES = {"random_library": "randomness", "simple_math": "variables"}
+
+MASTERY_THRESHOLD = 3
+
+
+def _canonical_skill(skill):
+    return SKILL_ALIASES.get(skill, skill)
+
+
+def skill_map(db, kid_id):
+    """Per-skill progress for one kid, grouped into the taxonomy's tiers."""
+    known = {sid for sid, _label, _tier in SKILLS}
+    approved_counts = {sid: 0 for sid in known}
+    open_counts = {sid: 0 for sid in known}
+
+    approved_task_ids = {
+        r["task_id"] for r in dbmod.fetchall(db.execute(
+            "SELECT DISTINCT task_id FROM submissions WHERE kid_id=? AND status='approved'",
+            (kid_id,)))
+    }
+    rows = dbmod.fetchall(db.execute(
+        "SELECT id, skills, status FROM tasks WHERE kid_id=?", (kid_id,)))
+    for r in rows:
+        try:
+            tags = json.loads(r["skills"]) if r["skills"] else []
+        except (TypeError, ValueError):
+            tags = []
+        for tag in tags:
+            sid = _canonical_skill(tag)
+            if sid not in known:
+                continue
+            if r["id"] in approved_task_ids:
+                approved_counts[sid] += 1
+            elif r["status"] == "active":
+                open_counts[sid] += 1
+
+    def state(sid):
+        if approved_counts[sid] >= MASTERY_THRESHOLD:
+            return "mastered"
+        if approved_counts[sid] > 0:
+            return "started"
+        # Locked means "nothing to do here yet" -- derived from the kid's
+        # own task pool rather than a hardcoded per-kid tier ceiling, so a
+        # newly added kid isn't silently walled off.
+        return "open" if open_counts[sid] > 0 else "locked"
+
+    tiers = []
+    for tier in sorted({t for _s, _l, t in SKILLS}):
+        entries = []
+        for sid, label, t in SKILLS:
+            if t != tier:
+                continue
+            entries.append({
+                "id": sid, "label": label, "short": SHORT_LABELS.get(sid, sid[:6].upper()),
+                "state": state(sid),
+                "approved": approved_counts[sid], "open": open_counts[sid],
+            })
+        tiers.append({"tier": tier, "name": TIER_NAMES.get(tier, f"TIER {tier}"), "skills": entries})
+
+    # Skill of the day: the kid's actual frontier. Picking uniformly from
+    # every unmastered skill would happily hand a beginner dynamic
+    # programming, so restrict to the lowest tier that still has unfinished
+    # work in it, then pick within that. Same deterministic seed shape as
+    # the daily quest, so it holds still for the whole day.
+    tier_of = {sid: tier for sid, _label, tier in SKILLS}
+    unfinished = [sid for sid in known
+                  if approved_counts[sid] < MASTERY_THRESHOLD and open_counts[sid] > 0]
+    candidates = []
+    if unfinished:
+        frontier = min(tier_of[sid] for sid in unfinished)
+        candidates = sorted(sid for sid in unfinished if tier_of[sid] == frontier)
+    return {
+        "tiers": tiers,
+        "mastered": sum(1 for sid in known if approved_counts[sid] >= MASTERY_THRESHOLD),
+        "total": len(known),
+        "skillOfTheDay": _quest_pick(kid_id, date.today().isoformat() + ":skill", candidates),
+        "masteryThreshold": MASTERY_THRESHOLD,
+    }
+
+
+@app.route("/api/skills", methods=["GET"])
+@require_family_session
+def get_skill_map():
+    db = get_db()
+    kid_id = g.kid_id or request.args.get("kid")
+    if not kid_id:
+        return jsonify({"error": "kid required"}), 400
+    if _kid_family_id(db, kid_id) != g.family_id:
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(skill_map(db, kid_id))
+
+
 @app.route("/api/quests/today", methods=["GET"])
 @require_family_session
 def get_todays_quests():

@@ -993,31 +993,93 @@ function MysteryBoxPicker({ kidId, available, kidTasks, kidSubmissions, sentBack
 // however their tasks got seeded) gets a freshly generated opaque task
 // id with no shared naming convention to rely on, so skill is the only
 // thing that reliably identifies "which fundamental is this."
-const FUNDAMENTALS_ORDER = ["variables", "type_casting", "loops_basic", "conditionals", "loops_breaks", "lists", "functions", "parameters", "simple_math", "random_library"];
-
 // Deliberately simpler than MysteryBoxPicker: a fixed small pool (not
 // a large rotating one) needs no boxes, reroll, or skill-gap scoring --
 // just a plain list straight into SubmitModal. No `tip` prop is passed
 // (SubmitModal already renders nothing when tip is falsy) -- the whole
 // point of this section is an unaided recall check, not a lookup.
-function FundamentalsPractice({ kidId, tasks, sentBack = {}, onSubmit }) {
+// Mirrors the server's SKILL_ALIASES so a task tagged with a historical
+// name still resolves to the skill its node represents.
+const SKILL_ALIASES = { random_library: "randomness", simple_math: "variables" };
+function canonicalSkill(sk) { return SKILL_ALIASES[sk] || sk; }
+
+const SKILL_NODE_STYLE = {
+  mastered: { glyph: "\u25a0", color: "#55824A", border: "#55824A", bg: "#55824A18" },
+  started:  { glyph: "\u25d0", color: "#B3872F", border: "#B3872F", bg: "#B3872F18" },
+  open:     { glyph: "",        color: "#8A7660", border: "#C7B394", bg: "#ffffff" },
+  locked:   { glyph: "\u25a1", color: "#C7B394", border: "#E4D3B4", bg: "#00000008" },
+};
+
+// The map itself: one band per tier, skills strung along it. Nodes wrap
+// rather than scroll sideways -- a trail that runs off the edge of a
+// phone is a trail nobody reads.
+function SkillTrail({ skillMap, onOpen }) {
+  return (
+    <div className="space-y-4">
+      <Panel>
+        <div className="flex items-baseline justify-between mb-1">
+          <div className="text-xs text-sand-600 tracking-widest">SKILL MAP</div>
+          <div className="text-sand-800">{skillMap.mastered} / {skillMap.total}</div>
+        </div>
+        <div className="font-sans text-xs text-sand-500">
+          Every quest you finish fills in a skill. Three finished masters it.
+        </div>
+      </Panel>
+
+      {skillMap.tiers.map(tier => {
+        const allLocked = tier.skills.every(sk => sk.state === "locked");
+        return (
+          <Panel key={tier.tier}>
+            <div className="flex items-baseline justify-between mb-3 gap-2">
+              <div className="text-xs text-sand-600 tracking-widest">
+                {romanTier(tier.tier)} · {tier.name}
+              </div>
+              {allLocked && <div className="text-[10px] text-sand-400 tracking-wide">LOCKED</div>}
+            </div>
+            {/* A fixed grid rather than flex-wrap: with wrapping there's no
+                way to know which node ends a row, so every row trailed off
+                with a dangling connector. */}
+            <div className="grid grid-cols-3 gap-y-3">
+              {tier.skills.map((sk, i) => {
+                const st = SKILL_NODE_STYLE[sk.state];
+                const isToday = sk.id === skillMap.skillOfTheDay;
+                const endsRow = i % 3 === 2 || i === tier.skills.length - 1;
+                return (
+                  <div key={sk.id} className="flex items-start">
+                    <button onClick={() => onOpen(sk)} disabled={sk.state === "locked"}
+                      className={"flex flex-col items-center gap-1 w-[62px] shrink-0 " + (sk.state === "locked" ? "cursor-default" : "hover:opacity-80 transition-opacity")}>
+                      <span className="w-9 h-9 rounded-lg border-2 flex items-center justify-center"
+                        style={{ color: st.color, borderColor: isToday ? "#D6A53D" : st.border,
+                                 background: st.bg, fontSize: "17px",
+                                 boxShadow: isToday ? "0 0 0 2px #D6A53D55" : "none" }}>
+                        {st.glyph}
+                      </span>
+                      <span className="text-[9px] leading-tight text-center"
+                        style={{ color: sk.state === "locked" ? "#C7B394" : "#6B5A48" }}>{sk.short}</span>
+                    </button>
+                    {!endsRow && <span aria-hidden="true" className="flex-1 mt-4 h-px bg-sand-300" />}
+                  </div>
+                );
+              })}
+            </div>
+            {tier.skills.some(sk => sk.id === skillMap.skillOfTheDay) && (
+              <div className="mt-3 text-[10px] text-gold-700 tracking-wide">★ SKILL OF THE DAY</div>
+            )}
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function romanTier(n) { return ["", "I", "II", "III", "IV"][n] || String(n); }
+
+function FundamentalsPractice({ kidId, tasks, sentBack = {}, skillMap, onSubmit }) {
+  const [openSkill, setOpenSkill] = useState(null);
   const [activeTask, setActiveTask] = useState(null);
   const [explanation, setExplanation] = useState("");
   const [code, setCode] = useState("");
   const [pasted, setPasted] = useState(false);
-
-  const isRecognized = t => t.skills && t.skills.some(sk => FUNDAMENTALS_ORDER.includes(sk));
-  // flatMap (not map+find) -- a skill can now have several practice
-  // questions, not just one, so every match for a skill shows up,
-  // grouped together in FUNDAMENTALS_ORDER's order.
-  const bySkill = FUNDAMENTALS_ORDER
-    .flatMap(skillId => tasks.filter(t => t.skills && t.skills.includes(skillId)))
-    .concat(tasks.filter(t => !isRecognized(t)));
-  // Anything a parent sent back floats to the top, ahead of the skill
-  // ordering -- it already has feedback waiting on it, so it's the most
-  // useful thing to pick up next.
-  const ordered = bySkill.filter(t => sentBack[t.id] !== undefined)
-    .concat(bySkill.filter(t => sentBack[t.id] === undefined));
 
   function startTask(task) {
     const draft = loadDraft(kidId, task.id);
@@ -1032,15 +1094,44 @@ function FundamentalsPractice({ kidId, tasks, sentBack = {}, onSubmit }) {
     saveDraft(kidId, activeTask.id, { code, explanation, pasted });
   }, [code, explanation, pasted, activeTask, kidId]);
 
+  const skillTasks = openSkill
+    ? tasks.filter(t => (t.skills || []).some(sk => canonicalSkill(sk) === openSkill.id))
+    : [];
+  const sortedSkillTasks = skillTasks.filter(t => sentBack[t.id] !== undefined)
+    .concat(skillTasks.filter(t => sentBack[t.id] === undefined));
+  const lib = openSkill ? LIBRARY_TIPS[openSkill.id] : null;
+
   return (
     <div>
-      <div className="grid gap-2">
-        {ordered.map(task => (
-          <TaskRow key={task.id} title={task.title} points={task.points}
-            vehicle={task.vehicle} difficulty={task.difficulty} sentBackNote={sentBack[task.id]}
-            onClick={() => startTask(task)} />
-        ))}
-      </div>
+      {!openSkill && skillMap && (
+        <SkillTrail skillMap={skillMap} onOpen={setOpenSkill} />
+      )}
+
+      {openSkill && (
+        <Panel>
+          <button onClick={() => setOpenSkill(null)}
+            className="text-sand-600 hover:text-sand-800 flex items-center gap-1 text-sm mb-3">
+            <IconBack size={14} /> All skills
+          </button>
+          <div className="text-sand-900 mb-1">{openSkill.label}</div>
+          <div className="font-sans text-xs text-sand-500 mb-3">
+            {openSkill.approved} finished{openSkill.open > 0 ? " \u00b7 " + openSkill.open + " to try" : ""}
+          </div>
+          {lib && (
+            <div className="mb-3 rounded-xl border border-gold-400/40 bg-gold-500/10 px-3 py-2">
+              <div className="text-xs text-gold-700 tracking-wide mb-1">{lib.title}</div>
+              <div className="font-sans text-xs text-sand-600">{lib.tip}</div>
+            </div>
+          )}
+          {sortedSkillTasks.length === 0 ? (
+            <div className="font-sans text-sm text-sand-500 py-2">Nothing left to try here right now.</div>
+          ) : sortedSkillTasks.map(task => (
+            <TaskRow key={task.id} title={task.title} points={task.points}
+              vehicle={task.vehicle} difficulty={task.difficulty} sentBackNote={sentBack[task.id]}
+              onClick={() => startTask(task)} />
+          ))}
+        </Panel>
+      )}
 
       {activeTask && (
         <SubmitModal task={activeTask} explanation={explanation} setExplanation={setExplanation}
@@ -1071,6 +1162,7 @@ function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [team, setTeam] = useState(null);
   const [quests, setQuests] = useState(null);
+  const [skillMap, setSkillMap] = useState(null);
   const [teamError, setTeamError] = useState(null);
   const [kidLoginError, setKidLoginError] = useState(null);
   const [error, setError] = useState(null);
@@ -1106,14 +1198,15 @@ function App() {
   }
 
   async function loadKidData(kidId) {
-    const [t, s, r, cfg, teamRes, questRes] = await Promise.all([
+    const [t, s, r, cfg, teamRes, questRes, skillRes] = await Promise.all([
       apiGet("/tasks?kid=" + kidId), apiGet("/submissions?kid=" + kidId),
       apiGet("/redemptions?kid=" + kidId), apiGet("/settings"), apiGet("/teams/me"),
-      apiGet("/quests/today?kid=" + kidId),
+      apiGet("/quests/today?kid=" + kidId), apiGet("/skills?kid=" + kidId),
     ]);
     setTasks(t); setSubmissions(s); setRedemptions(r); setSettings(cfg);
     setTeam(teamRes.team);
     setQuests(questRes);
+    setSkillMap(skillRes);
   }
 
   async function refreshTeam() {
@@ -1328,7 +1421,7 @@ function App() {
       {authRole && <TopBanner />}
       {authRole === "kid" && selectedKid && (
         <KidView kid={selectedKid} tasks={tasks} submissions={submissions} redemptions={redemptions} settings={settings}
-          taskStatus={taskStatus} team={team} teamError={teamError} quests={quests}
+          taskStatus={taskStatus} team={team} teamError={teamError} quests={quests} skillMap={skillMap}
           onSubmit={submitTask} onRedeem={redeem} onBack={logout}
           onCreateTeam={createTeam} onJoinTeam={joinTeam} onLeaveTeam={leaveTeam} />
       )}
@@ -1498,7 +1591,7 @@ function FeaturedQuest({ task, label, blurb, bonusLabel, accent, points, sentBac
   );
 }
 
-function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, team, teamError, quests,
+function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, team, teamError, quests, skillMap,
   onSubmit, onRedeem, onBack, onCreateTeam, onJoinTeam, onLeaveTeam }) {
   const [tab, setTab] = useState("quest");
 
@@ -1557,16 +1650,8 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
       )}
 
       {tab === "learn" && (
-        fundamentals.length > 0 ? (
-          <Panel>
-            <div className="text-xs text-sand-600 tracking-widest mb-3">FUNDAMENTALS PRACTICE</div>
-            <FundamentalsPractice kidId={kid.id} tasks={fundamentals} sentBack={sentBack} onSubmit={onSubmit} />
-          </Panel>
-        ) : (
-          <Panel>
-            <div className="font-sans text-sm text-sand-500 py-2 text-center">Nothing left to practice right now -- nice work.</div>
-          </Panel>
-        )
+        <FundamentalsPractice kidId={kid.id} tasks={available} sentBack={sentBack}
+          skillMap={skillMap} onSubmit={onSubmit} />
       )}
 
       {tab === "history" && (
@@ -1579,7 +1664,7 @@ function KidView({ kid, tasks, submissions, redemptions, settings, taskStatus, t
       )}
 
       {tab === "me" && (
-        <MePanel kid={kid} submissions={kidSubmissions} onLogout={onBack}
+        <MePanel kid={kid} submissions={kidSubmissions} onLogout={onBack} skillMap={skillMap}
           balance={balance} minutesAvailable={minutesAvailable} maxRedeemable={maxRedeemable}
           capRemaining={capRemaining} dailyCapMinutes={settings.dailyCapMinutes} onRedeem={onRedeem} />
       )}
@@ -1847,7 +1932,7 @@ function GuildPanel({ team, teamError, onCreateTeam, onJoinTeam, onLeaveTeam }) 
 
 // Streak + heatmap are computed entirely client-side from submissions
 // already loaded for the Quest/Learn tabs -- no separate fetch needed.
-function MePanel({ kid, submissions, onLogout, balance, minutesAvailable, maxRedeemable, capRemaining, dailyCapMinutes, onRedeem }) {
+function MePanel({ kid, submissions, onLogout, skillMap, balance, minutesAvailable, maxRedeemable, capRemaining, dailyCapMinutes, onRedeem }) {
   const [redeemMinutes, setRedeemMinutes] = useState(15);
   const birthday = birthdayInfo(kid.birthday);
 
@@ -1919,6 +2004,18 @@ function MePanel({ kid, submissions, onLogout, balance, minutesAvailable, maxRed
           <div className="font-sans text-sm text-sand-500">Not set yet -- ask a grown-up to add it.</div>
         )}
       </Panel>
+
+      {skillMap && (
+        <Panel>
+          <div className="flex items-baseline justify-between mb-1">
+            <div className="text-xs text-sand-600 tracking-widest">SKILL MAP</div>
+            <div className="text-lg text-brand-700">{skillMap.mastered} / {skillMap.total}</div>
+          </div>
+          <div className="font-sans text-xs text-sand-500">
+            skills mastered — see the full map under Learn
+          </div>
+        </Panel>
+      )}
 
       <GaugeBar balance={balance} minutesAvailable={minutesAvailable} />
 
