@@ -11,6 +11,17 @@ SKILLS = [
     ("type_casting", "Text vs. numbers (type conversion)", 1),
     ("shapes", "Basic shapes", 1),
     ("colors", "Color control", 1),
+    # The turtle building blocks. These were being taught inside "shapes"
+    # rather than named -- 16 tasks use penup/pendown and 26 set a heading,
+    # all filed under shapes -- so a kid could never see progress on them.
+    # goto, pensize and speed had no tasks at all, which caps what a kid
+    # can deliberately lay out on the canvas.
+    ("pen_control", "Pen control (up, down, size, dot)", 1),
+    ("positioning", "Moving without drawing (goto, heading)", 1),
+    # import appears in every single turtle task and in all ten random
+    # tasks, but was only ever tagged as part of `randomness` -- taught
+    # incidentally as "the line you type before using random", never named.
+    ("modules", "Modules and import", 1),
     ("loops_basic", "Single loops", 1),
     ("lists", "Lists", 1),
     ("parameters", "Function parameters", 1),

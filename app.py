@@ -59,7 +59,30 @@ DEFAULT_SETTINGS = {"pointsPerMinute": "1", "dailyCapMinutes": "60"}
 # newly created kid's own task list — see seed_starter_tasks_for_kid().
 # Never reused as literal ids: two different kids each get their own
 # independent copy of these rows.
-STARTER_TURTLE_TASKS = [
+# goto/setheading, pensize and speed had no tasks anywhere in the corpus,
+# so the skills existed with nothing to practise on. These fill that in.
+POSITIONING_TASKS = [
+    ("Four Corners", 10, "easy",
+     "Put a dot in each corner of the screen using goto(x, y) — try (-150, 150), (150, 150), (150, -150) and (-150, -150). Use penup() so you don't draw lines between them.",
+     ["positioning", "pen_control"]),
+    ("Scattered Stars", 20, "medium",
+     "Draw five small stars at five different spots, using penup() and goto() to move between them so no lines join them up.",
+     ["positioning", "pen_control", "loops_basic"]),
+    ("Point the Way", 10, "easy",
+     "Use setheading() to point the turtle in four different directions — 0 is right, 90 is up, 180 is left, 270 is down — drawing a short line each time.",
+     ["positioning"]),
+    ("Thick and Thin", 10, "easy",
+     "Draw three lines side by side with pensize() set to 1, then 5, then 15, so you can see the pen getting thicker.",
+     ["pen_control"]),
+    ("Dotted Trail", 10, "easy",
+     "Use dot() inside a loop to leave a trail of dots across the screen instead of a solid line. Change the dot size as you go.",
+     ["pen_control", "loops_basic"]),
+    ("Back to the Middle", 10, "easy",
+     "Draw a shape anywhere on screen, then send the turtle back to the centre with goto(0, 0) without leaving a line behind it.",
+     ["positioning", "pen_control"]),
+]
+
+STARTER_TURTLE_TASKS = POSITIONING_TASKS + [
     ("Draw Your Initials", 10, "easy",
      "Draw your initials using only forward, right, left, penup, and pendown. No loops required — but you might find you want one.",
      ["shapes"]),
@@ -709,6 +732,65 @@ def _ensure_column(db, table, column, coldef):
         db.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
 
 
+
+# The turtle building blocks were being taught without being named, so the
+# tasks that already exercise them carry no tag for them. Match on what a
+# brief actually says and append the skill -- additive, never replacing an
+# existing tag, and skipped once present so repeated worker boots are a
+# no-op.
+RETAG_PATTERNS = {
+    "pen_control": r"pen ?up|pen ?down|lift the pen|pen off|pen ?size|\bdot\b",
+    "positioning": r"\bgoto\b|set ?pos|\bheading\b|set ?heading|\bteleport\b",
+    "modules": r"\bimport\b|\bmodule\b",
+}
+
+
+def _retag_tasks_for_new_skills(db):
+    import re as _re
+    changed = 0
+    for row in dbmod.fetchall(db.execute(
+            "SELECT id, title, brief, skills FROM tasks WHERE skills IS NOT NULL")):
+        try:
+            tags = json.loads(row["skills"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(tags, list):
+            continue
+        text = f"{row['title']} {row['brief']}".lower()
+        added = False
+        for skill, pattern in RETAG_PATTERNS.items():
+            if skill not in tags and _re.search(pattern, text):
+                tags.append(skill)
+                added = True
+        if added:
+            db.execute("UPDATE tasks SET skills=? WHERE id=?", (json.dumps(tags), row["id"]))
+            changed += 1
+    return changed
+
+
+def _seed_missing_positioning_tasks(db):
+    """Give existing kids the new primitive tasks.
+
+    seed_starter_tasks_for_kid only runs when a kid is created, so kids who
+    already exist would have skills on their map with nothing to practise
+    on. Keyed on title per kid so repeated worker boots don't duplicate.
+    """
+    added = 0
+    for kid in dbmod.fetchall(db.execute("SELECT id FROM kids")):
+        for title, points, diff, brief, skills in POSITIONING_TASKS:
+            exists = dbmod.fetchone(db.execute(
+                "SELECT 1 FROM tasks WHERE kid_id=? AND title=?", (kid["id"], title)))
+            if exists:
+                continue
+            db.execute(
+                """INSERT INTO tasks (id, title, points, difficulty, brief, kid_id, skills, status, vehicle, test_cases)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'turtle', NULL)""",
+                ("t_" + uuid.uuid4().hex[:10], title, points, diff, brief, kid["id"],
+                 json.dumps(skills)))
+            added += 1
+    return added
+
+
 def init_db():
     db = dbmod.connect()
     db.executescript(
@@ -826,6 +908,8 @@ def init_db():
     # family_id (an existing table gaining a new column), unlike parents,
     # which is created fresh with family_id already in its column list.
     db.execute("CREATE INDEX IF NOT EXISTS idx_kids_family_id ON kids(family_id)")
+    _retag_tasks_for_new_skills(db)
+    _seed_missing_positioning_tasks(db)
     # Guild quests used to be three mutable columns on the team row, so a
     # new quest overwrote the old one and the previous result was simply
     # forgotten. Seasons are rows instead. Fold any existing window into
@@ -1308,7 +1392,8 @@ TIER_NAMES = {1: "THE FOUNDATIONS", 2: "THE DEEP WOODS", 3: "THE SUMMIT"}
 # still shows once a skill is opened.
 SHORT_LABELS = {
     "variables": "VARS", "type_casting": "TYPES", "shapes": "SHAPES",
-    "colors": "COLORS", "loops_basic": "LOOPS", "lists": "LISTS",
+    "colors": "COLORS", "pen_control": "PEN", "positioning": "GOTO",
+    "modules": "IMPORT", "loops_basic": "LOOPS", "lists": "LISTS",
     "parameters": "PARAMS", "nested_loops": "NESTED", "conditionals": "LOGIC",
     "randomness": "RANDOM", "functions": "FUNCS", "recursion": "RECURSE",
     "event_handling": "KEYS", "dynamic_programming": "MEMO",

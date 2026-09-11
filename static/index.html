@@ -533,6 +533,21 @@ const DEFAULT_CODE_JUDGE = "# Read input with input(), print your answer with pr
 // MysteryBoxPicker's activeTip) -- not an LLM, the curriculum is small
 // and fixed so a lookup table covers it completely.
 const LIBRARY_TIPS = {
+  pen_control: {
+    title: "Lifting the pen",
+    tip: "penup() stops the turtle drawing while it moves; pendown() starts again. pensize() makes the line thicker, and dot() stamps a single dot where it stands.",
+    code: 'pen.penup()\npen.forward(50)\npen.pendown()\npen.pensize(5)\npen.dot(20, "teal")',
+  },
+  positioning: {
+    title: "Going somewhere exactly",
+    tip: "goto(x, y) sends the turtle straight to a spot — (0, 0) is the middle. setheading() points it in a direction: 0 is right, 90 is up.",
+    code: "pen.penup()\npen.goto(-100, 50)\npen.pendown()\npen.setheading(90)",
+  },
+  modules: {
+    title: "Borrowing someone else's code",
+    tip: "import brings in code somebody else already wrote. import turtle is why pen.forward() exists at all, and import random is what gives you randint().",
+    code: "import turtle\nimport random\n\npen = turtle.Turtle()\nstep = random.randint(10, 60)",
+  },
   shapes: {
     title: "Filling shapes",
     tip: "Want a solid color instead of just an outline? Wrap your shape between begin_fill() and end_fill().",
